@@ -17,15 +17,16 @@ class YoloSeg:
         results = self.model.predict(
             img, device=device, 
             show=False,
-            retina_masks=True, 
+            retina_masks=False, 
             classes=[8], 
             iou=0.5, 
-            verbose=False
+            verbose=False,
+            half=True
         )
 
         r = results[0].masks
 
-        overlay = img.copy()
+        #overlay = img.copy()
         
         boat_mask = np.zeros((H, W), dtype=np.uint8)
 

@@ -500,36 +500,22 @@ def dehomog(vec):
 
 
 def get_bottommost_line(mask, thickness=5):
-
     height, width = mask.shape
+    reversed_mask = mask[::-1, :] > 0
 
-    # Reverse the mask vertically so the bottommost positive becomes the first True.
-    reversed_mask = (mask[::-1, :] > 0)
-
-    # For each column, np.argmax returns the index of the first True value in the reversed mask.
     first_positive = np.argmax(reversed_mask, axis=0)
     has_positive = np.any(reversed_mask, axis=0)
 
-    # Convert the reversed index to the original coordinate.
-    bottom_indices = np.where(has_positive, height - 1 - first_positive, -1)  # shape: (width,)
+    bottom_indices = np.full(width, -1, dtype=int)
+    bottom_indices[has_positive] = height - 1 - first_positive[has_positive]
 
-    # Prepare an output mask.
-    output_mask = np.zeros_like(mask, dtype=np.uint8)
+    lower_bound = np.clip(bottom_indices - thickness + 1, 0, height - 1)
+    upper_bound = bottom_indices
 
-    # Create a vector of row indices.
-    rows = np.arange(height).reshape(-1, 1)  # shape: (height, 1)
+    rows = np.arange(height).reshape(-1, 1)
+    mask_band = (rows >= lower_bound) & (rows <= upper_bound) & (bottom_indices >= 0)
 
-    # For each column j, define the lower bound of the thick band:
-    lower_bound = (bottom_indices - thickness + 1).clip(min=0)  # shape: (width,)
-    upper_bound = bottom_indices  # shape: (width,)
-
-    # Build a condition: for each column j and each row i,
-    # mark as True if lower_bound[j] <= i <= upper_bound[j] and bottom_indices[j] >= 0.
-    condition = (rows >= lower_bound[None, :]) & (rows <= upper_bound[None, :]) & (bottom_indices[None, :] >= 0)
-
-    output_mask[condition] = 1
-
-    return output_mask
+    return mask_band.astype(np.uint8)
 
 def get_water_mask_from_contour_mask(contour_mask, offset=30):
     height, _ = contour_mask.shape
@@ -544,7 +530,7 @@ def get_water_mask_from_contour_mask(contour_mask, offset=30):
     first_positive = np.argmax(reversed_mask, axis=0)
     has_positive = np.any(reversed_mask, axis=0)
 
-    bottom_indices = np.where(has_positive, height - 1 - first_positive, -1)
+    bottom_indices = np.where(has_positive, height - 1 - first_positive, -1) - offset 
 
     rows = np.arange(height).reshape(-1, 1)  # shape: (H, 1)
     boundary = bottom_indices.reshape(1, -1)    # shape: (1, W)
@@ -555,34 +541,11 @@ def get_water_mask_from_contour_mask(contour_mask, offset=30):
 
 
 def filter_mask_by_boundary(mask, boundary_indices, offset=30):
-    """
-    Given a boundary mask that has exactly one positive element per column,
-    zero out all rows in other_mask that are below the positive pixel
-    (i.e. where row index > boundary index) for each column.
-    
-    :param other_mask: np.array of shape (height, width) to be filtered.
-    :param boundary_mask: Binary np.array of shape (height, width) with one positive pixel per column.
-    :return: Filtered version of other_mask.
-    """
-    height, width = mask.shape
-
-    # For each column, find the row index of the positive element.
-    # (Assumes there is exactly one positive pixel per column.)
-    #boundary_indices = np.argmax(boundary_mask, axis=0)  # shape: (width,)
-
-    adjusted_boundary = np.maximum(boundary_indices - offset, 0)
-
-    # Create an array of row indices for each pixel.
-    rows = np.arange(height)[:, np.newaxis]  # shape: (height, 1)
-
-    # Broadcast boundary_indices to (height, width) and create a mask
-    # that is True for rows above or equal to the boundary.
-    keep_mask = rows < adjusted_boundary
-
-    # Zero out all elements in other_mask below the boundary.
-    filtered_mask = np.where(keep_mask, mask, 0)
-
-    return filtered_mask
+    height, _ = mask.shape
+    adjusted_boundary = np.clip(boundary_indices - offset, 0, height - 1)
+    row_indices = np.arange(height).reshape(-1, 1)
+    keep_mask = row_indices < adjusted_boundary
+    return np.where(keep_mask, mask, 0)
 
 def write_coordinates_to_file(filename, frame, coordinates):
 

@@ -15,6 +15,7 @@ from yolo import YoloSeg
 from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
+from stixels import Stixels
 
 #Scen1 - Into tunnel
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_11-30-51_28170706_HD1080_FPS15.svo"
@@ -163,6 +164,7 @@ def main():
     fastsam = FastSAMSeg(model_path=fastsam_model_path)
     rwps3d = RWPS(config_file=rwps_config_path)
     temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=TRANS_FLOOR_TO_CAM, R_imu_to_cam=ROT_FLOOR_TO_LIDAR)
+    stixels = Stixels(num_stixels=192, img_shape=(height, width))
 
 
     cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
@@ -205,17 +207,29 @@ def main():
 
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
-        contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
+        
+        contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
 
+        
+
+        rwps_succeded = False
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
         
         # Temporal Filtering
-        water_mask_filterd = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
+        water_mask_filtered = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
+
+        #boat_mask = yolo.get_boat_mask(left_img)
+        #water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
         # Create Stixels
+        
+        #stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask)
+        free_space_boundary = stixels.get_free_space_boundary(water_mask_filtered)
 
-
+        
+        temp = stixels.create_segmentation_score_map(disparity_img, free_space_boundary, upper_contour_mask)
+        
 
 
 
@@ -226,14 +240,12 @@ def main():
         print(f"Processing time: {runtime_ms:.2f} ms")
 
         pink_color = [255, 0, 255]
-        water_img_filtered = blend_image_with_mask(left_img, water_mask_filterd, pink_color, alpha1=1, alpha2=0.5)
+        water_img_filtered = blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
         water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
 
 
         #cv2.imshow("left", left_img)
         cv2.imshow("Filtered_mask", water_img_filtered)
-        cv2.imshow("Water", water_img)
-        cv2.imshow("RWPS", rwps_mask_3d*255)
         cv2.waitKey(1)
         #time.sleep(0.1)
         

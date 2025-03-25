@@ -182,7 +182,7 @@ class FastSAMSeg:
 
         masks = result.masks.data
 
-        N, H_mask, W_mask = masks.shape
+        _, H_mask, W_mask = masks.shape
 
         binary_masks = (masks > 0.5).to(torch.uint8)
         areas = binary_masks.view(binary_masks.size(0), -1).sum(dim=1)  # Sum over H*W
@@ -191,6 +191,7 @@ class FastSAMSeg:
         binary_masks = binary_masks.cpu().numpy()
         
         contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)
+        upper_contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)
 
         scale_w = W / W_mask
         scale_h = H / H_mask
@@ -214,14 +215,18 @@ class FastSAMSeg:
                 if cv2.contourArea(contour) >= min_area:
                     cv2.drawContours(contour_mask_intermediate, [contour], -1, 255, thickness=1)
 
+            upper_line = self.get_upper_contour_line(mask)
+            cv2.bitwise_or(upper_contour_mask_intermediate, upper_line, upper_contour_mask_intermediate)
+
         contour_mask_resized = cv2.resize(contour_mask_intermediate, None, fx=scale_w, fy=scale_h, interpolation=cv2.INTER_NEAREST)
+        upper_contour_mask_resized = cv2.resize(upper_contour_mask_intermediate, None, fx=scale_w, fy=scale_h, interpolation=cv2.INTER_NEAREST)
 
         if input_mask is not None and matched_index >= 0:
             matched_mask = binary_masks[matched_index]
 
             # Build combined mask of all others
             all_other_masks = [
-                mask for i, mask in enumerate(binary_masks) if i != matched_index
+                mask for j, mask in enumerate(binary_masks) if j != matched_index
             ]
             if all_other_masks:
                 combined_other_masks = np.any(np.stack(all_other_masks), axis=0).astype(np.uint8)
@@ -232,40 +237,11 @@ class FastSAMSeg:
             # Final resize
             cleaned_mask_resized = cv2.resize(cleaned_mask, (W, H), interpolation=cv2.INTER_NEAREST)
 
-            return contour_mask_resized, cleaned_mask_resized
-
-        # Fall back to returning only the contour mask
-        return contour_mask_resized, None
+            return contour_mask_resized, upper_contour_mask_resized, cleaned_mask_resized
+        
+        else:
+            return contour_mask_resized, upper_contour_mask_resized, None
     
-
-
-    
-    def get_all_upper_countours(self, img: np.array, device: str = 'cuda', min_area=3000) -> np.array:
-        masks = self.get_all_masks(img, device=device)
-        combined_upper = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
-
-        for mask in masks:
-            # Ensure binary mask
-            bin_mask = (mask > 0).astype(np.uint8)
-            # Optionally, you can use cv2.findContours to filter out small regions
-            contours, _ = cv2.findContours(bin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            valid = False
-            for contour in contours:
-                if cv2.contourArea(contour) >= min_area:
-                    valid = True
-                    break
-            if not valid:
-                continue
-
-            # Extract the upper contour line from this mask.
-            upper_line = self.get_upper_contour_line(bin_mask)
-            # Optionally, you can also draw the original contour:
-            # cv2.drawContours(upper_line, [contour], -1, 255, thickness=1)
-
-            # Combine the upper contour line with previous ones.
-            combined_upper = cv2.bitwise_or(combined_upper, upper_line)
-
-        return combined_upper
     
     def get_upper_contour_line(self, mask) -> np.array:
         has_nonzero = mask.any(axis=0)  # shape: (W,)
