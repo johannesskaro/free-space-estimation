@@ -14,6 +14,7 @@ class TemporalFiltering:
         self.R_imu_to_cam = R_imu_to_cam
         self.past_frames = deque(maxlen=self.N)
         self.past_poses = deque(maxlen=self.N)
+        self.rolling_sum = None
 
 
     def add_frame(self, frame):
@@ -23,25 +24,32 @@ class TemporalFiltering:
         self.past_poses.append(pose)
 
     def get_rotation_matrix(self, ori_quat):
-        r = R.from_quat(ori_quat)
-        euler_angles = r.as_euler('zyx', degrees=False)
-        rotation = R.from_euler('ZYX', euler_angles, degrees=False)
-        rotation_matrix = rotation.as_matrix()
-        return rotation_matrix
+        return R.from_quat(ori_quat).as_matrix()
 
 
     def get_filtered_frame_no_motion_compensation(self, water_mask):
-        mask_sum = np.sum(self.past_frames, axis=0)
-        threshold = self.N/2
-        thresholded_mask = (mask_sum > threshold).astype(np.uint8)
-        smoothed_water_mask = np.logical_or(water_mask, thresholded_mask).astype(int)
+        if self.rolling_sum is None:
+            self.rolling_sum = np.zeros_like(water_mask, dtype=np.int32)
+
+        if len(self.past_frames) < self.N:
+            smoothed_water_mask = water_mask
+
+        else:
+            mask_sum = self.rolling_sum
+            threshold = self.N * 2 // 3
+            thresholded_mask = (mask_sum >= threshold).astype(np.uint8)
+            smoothed_water_mask = np.logical_or(water_mask, thresholded_mask).astype(int)
+        
+        if len(self.past_frames) == self.N:
+            oldest_frame = self.past_frames[0]
+            self.rolling_sum -= oldest_frame 
+
+        self.rolling_sum += water_mask
         self.add_frame(water_mask)
+
         return smoothed_water_mask
     
     def compute_homography(self, R, t, n, d, K):
-        """
-        Computes the homography matrix H = K * (R - (t * n^T) / d) * K_inv
-        """
         K_inv = np.linalg.inv(K)
         Rt = R - (t @ n.T) / d
         H = K @ Rt @ K_inv
@@ -58,14 +66,16 @@ class TemporalFiltering:
         for i, (past_frame, past_pose) in enumerate(zip(self.past_frames, self.past_poses)):
             past_pos = past_pose[:3]
             past_ori_quat = past_pose[3:]
-            R_past = self.get_rotation_matrix(past_pos)
+            R_past = self.get_rotation_matrix(past_ori_quat)
 
             R_rel_imu = R_curr @ R_past.T
+            pos_rel_imu = curr_pos - R_rel_imu @ past_pos
 
             t_induced_imu = R_rel_imu @ self.t_imu_to_cam - self.t_imu_to_cam
+            t_total_imu = t_induced_imu + pos_rel_imu
 
             R_rel_cam = self.R_imu_to_cam @ R_rel_imu @ self.R_imu_to_cam.T
-            t_rel_cam = self.R_imu_to_cam @ t_induced_imu
+            t_rel_cam = self.R_imu_to_cam @ t_total_imu
 
             H = self.compute_homography(R_rel_cam, t_rel_cam, plane_normal, plane_d, self.cam_matrix)
 
@@ -80,10 +90,9 @@ class TemporalFiltering:
         past_compensated_frames = self.get_ego_motion_compensated_frames(curr_pose, plane_normal, plane_d)
         past_compensated_frames = np.sum(past_compensated_frames, axis=0)
         mask_sum = np.sum(self.past_frames, axis=0)
-        threshold = self.N/2
+        threshold = self.N * 2 // 3
         thresholded_mask = (mask_sum > threshold).astype(np.uint8)
-        smoothed_water_mask = np.logical_or(water_mask, thresholded_mask).astype(int)
+        smoothed_water_mask = np.logical_or(water_mask, thresholded_mask).astype(np.uint8)
         self.add_frame(water_mask)
         self.add_pose(curr_pose)
-
         return smoothed_water_mask

@@ -9,7 +9,7 @@ from shapely.geometry.polygon import Polygon
 import pyzed.sl as sl
 from stereo_svo import SVOCamera
 from transforms import *
-from utilities import find_closest_timestamp, get_water_mask_from_contour_mask
+from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask
 import time
 from yolo import YoloSeg
 from fastSAM import FastSAMSeg
@@ -162,7 +162,7 @@ def main():
     yolo = YoloSeg(model_path=yolo_model_path)
     fastsam = FastSAMSeg(model_path=fastsam_model_path)
     rwps3d = RWPS(config_file=rwps_config_path)
-    temporal_filtering = TemporalFiltering(K, n=3, t_imu_to_cam=TRANS_FLOOR_TO_CAM, R_imu_to_cam=ROT_FLOOR_TO_LIDAR)
+    temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=TRANS_FLOOR_TO_CAM, R_imu_to_cam=ROT_FLOOR_TO_LIDAR)
 
 
     cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
@@ -197,7 +197,7 @@ def main():
 
         pos_ned = gnss_data_ned[gnss_idx][1]
         ori_quat = gnss_data_ned[gnss_idx][2]
-        curr_pose = np.array([pos_ned, ori_quat])
+        curr_pose = np.concatenate([pos_ned, ori_quat])
 
         
         # Processing
@@ -209,14 +209,9 @@ def main():
 
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
-
+        
         # Temporal Filtering
-        normal = plane_params_3d[:3]
-        d = plane_params_3d[3]
-        #normal_length = np.linalg.norm(normal)
-        #unit_normal = normal / normal_length
-        #height = d / normal_length
-        water_mask_filterd = temporal_filtering.get_filtered_frame(water_mask, curr_pose, normal, d)
+        water_mask_filterd = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
 
         # Create Stixels
 
@@ -230,9 +225,14 @@ def main():
         runtime_ms = (end_time - start_time) * 1000
         print(f"Processing time: {runtime_ms:.2f} ms")
 
-        cv2.imshow("left", left_img)
-        cv2.imshow("Filtered_mask", water_mask_filterd*255)
-        cv2.imshow("Water", water_mask*255)
+        pink_color = [255, 0, 255]
+        water_img_filtered = blend_image_with_mask(left_img, water_mask_filterd, pink_color, alpha1=1, alpha2=0.5)
+        water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
+
+
+        #cv2.imshow("left", left_img)
+        cv2.imshow("Filtered_mask", water_img_filtered)
+        cv2.imshow("Water", water_img)
         cv2.imshow("RWPS", rwps_mask_3d*255)
         cv2.waitKey(1)
         #time.sleep(0.1)

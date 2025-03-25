@@ -135,7 +135,7 @@ class RWPS:
 
         # Check if there are enough points to segment plane
         if len(pcd.points) < self.ransac_n:
-            print("Not enough points to segment plane")
+            print("RWPS failed. Not enough points to segment plane")
             self.prev_planemodel = None
             valid = False
             return None, np.array([0, 1, 0, 1]), valid
@@ -148,7 +148,7 @@ class RWPS:
         )
 
         if not plane_model.any():  # if plane_model is empty
-            print("No plane found in RANSAC")
+            print("RWPS failed. No plane found in RANSAC")
             valid = False
             return None, np.array([0, 1, 0, 1]), valid
 
