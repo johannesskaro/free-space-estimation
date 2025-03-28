@@ -9,13 +9,16 @@ from shapely.geometry.polygon import Polygon
 import pyzed.sl as sl
 from stereo_svo import SVOCamera
 from transforms import *
-from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask
+from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask, merge_lidar_onto_image
 import time
 from yolo import YoloSeg
 from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
 from stixels import Stixels
+import warnings
+
+#warnings.filterwarnings('error', category=RuntimeWarning)
 
 #Scen1 - Into tunnel
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_11-30-51_28170706_HD1080_FPS15.svo"
@@ -114,7 +117,7 @@ def gen_ma2_lidar_points():
                 intensity_clipped = np.clip(intensity, 0, 100)
                 
                 xyz_c = H.dot(np.r_[xyz.T, np.ones((1, xyz.shape[0]))])[0:3, :].T
-              
+                
                 rvec = np.zeros((1,3), dtype=np.float32)
                 tvec = np.zeros((1,3), dtype=np.float32)
                 distCoeff = np.zeros((1,5), dtype=np.float32)
@@ -129,7 +132,7 @@ def gen_ma2_lidar_points():
 
                 lidar_data.append([timestamp, image_points_forward, intensity_clipped_forward, xyz_c_forward])
 
-                return lidar_data   
+    return lidar_data   
  
 
 def gen_ma2_gnss_ned():
@@ -160,15 +163,15 @@ def main():
     yolo_model_path = "weights/yolo11n-seg.pt"
     rwps_config_path = "config/rwps_config.json"
 
+    cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
+    P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
+
     yolo = YoloSeg(model_path=yolo_model_path)
     fastsam = FastSAMSeg(model_path=fastsam_model_path)
     rwps3d = RWPS(config_file=rwps_config_path)
     temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=TRANS_FLOOR_TO_CAM, R_imu_to_cam=ROT_FLOOR_TO_LIDAR)
-    stixels = Stixels(num_stixels=192, img_shape=(height, width))
+    stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params)
 
-
-    cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
-    P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
     rwps3d.set_camera_params(cam_params, P1)
 
 
@@ -190,6 +193,7 @@ def main():
             break
 
         timestamp, left_img, disparity_img, depth_img, = next_svo
+        depth_img[depth_img > 100] = np.nan
         lidar_idx, lidar_timestamp = find_closest_timestamp(lidar_timestamps, timestamp)
         gnss_idx, gnss_timestamp = find_closest_timestamp(gnss_timestamps, timestamp)
 
@@ -203,49 +207,49 @@ def main():
 
         
         # Processing
-        start_time = time.time()
-
+        
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
         
+        
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
-
         
 
-        rwps_succeded = False
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
         
         # Temporal Filtering
+        
         water_mask_filtered = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
-
+        
+        
         #boat_mask = yolo.get_boat_mask(left_img)
         #water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
         # Create Stixels
         
-        #stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask)
-        free_space_boundary = stixels.get_free_space_boundary(water_mask_filtered)
-
-        
-        temp = stixels.create_segmentation_score_map(disparity_img, free_space_boundary, upper_contour_mask)
-        
-
-
-
+        start_time = time.time()
+        stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c)
+        end_time = time.time()
 
         # Display
-        end_time = time.time()
+        
         runtime_ms = (end_time - start_time) * 1000
-        print(f"Processing time: {runtime_ms:.2f} ms")
+        #print(f"Processing time: {runtime_ms:.2f} ms")
 
-        pink_color = [255, 0, 255]
-        water_img_filtered = blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
-        water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
+        #pink_color = [255, 0, 255]
+        #water_img_filtered = blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
+        #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
+        stixel_img = stixels.overlay_stixels_on_image(left_img)
 
+        #stixels.plot_stixel_footprint(stixel_footprints)
+
+        #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
 
         #cv2.imshow("left", left_img)
-        cv2.imshow("Filtered_mask", water_img_filtered)
+        #cv2.imshow("Filtered_mask", water_img_filtered)
+        #cv2.imshow("Lidar stixel image", lidar_stixel_img)
+        cv2.imshow("stixel image", stixel_img)
         cv2.waitKey(1)
         #time.sleep(0.1)
         

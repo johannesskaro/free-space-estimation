@@ -1,0 +1,16 @@
+cmake -G "Visual Studio 17 2022" `
+  -A x64 `
+  -T v142 `
+  -D CMAKE_BUILD_TYPE=Release `
+  -D CMAKE_INSTALL_PREFIX=../install `
+  -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules `
+  -D BUILD_opencv_python3=ON `
+  -D PYTHON3_EXECUTABLE="C:/Users/johro/Documents/BB-Perception/py3.10_env/Scripts/python.exe" `
+  -D PYTHON3_LIBRARY="C:/Users/johro/Documents/BB-Perception/py3.10_env/libs/python310.lib" `
+  -D PYTHON3_INCLUDE_DIR="C:/Users/johro/Documents/BB-Perception/py3.10_env/include" `
+  -D WITH_CUDA=ON `
+  -D CUDA_ARCH_BIN=8.6 `
+  -D CUDA_NVCC_FLAGS="--allow-unsupported-compiler" `
+  ..
+
+  cmake --build . --config Release --target INSTALL
