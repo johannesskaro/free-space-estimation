@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from numba import njit, prange
+from shapely.geometry import Polygon, Point
 
 
 def blend_image_with_mask(img, mask, color=[0, 0, 255], alpha1=1, alpha2=1):
@@ -120,23 +121,6 @@ def read_mat_file(file_path):
 
 
 
-@njit(parallel=True)
-def get_bottommost_line(mask, thickness=5):
-    height, width = mask.shape
-    output = np.zeros_like(mask, dtype=np.uint8)
-
-    for x in prange(width):
-        # Search from bottom to top for the first non-zero pixel
-        for y in range(height - 1, -1, -1):
-            if mask[y, x] > 0:
-                y_bottom = y
-                y_start = max(0, y_bottom - thickness + 1)
-                for yy in range(y_start, y_bottom + 1):
-                    output[yy, x] = 1
-                break  # Found bottom, done with this column
-
-    return output
-
 def get_water_mask_from_contour_mask(contour_mask, offset=30):
     height, _ = contour_mask.shape
 
@@ -159,6 +143,23 @@ def get_water_mask_from_contour_mask(contour_mask, offset=30):
     
     return water_mask
 
+
+@njit(parallel=True)
+def get_bottommost_line(mask, thickness=5):
+    height, width = mask.shape
+    output = np.zeros_like(mask, dtype=np.uint8)
+
+    for x in prange(width):
+        # Search from bottom to top for the first non-zero pixel
+        for y in range(height - 1, -1, -1):
+            if mask[y, x] > 0:
+                y_bottom = y
+                y_start = max(0, y_bottom - thickness + 1)
+                for yy in range(y_start, y_bottom + 1):
+                    output[yy, x] = 1
+                break  # Found bottom, done with this column
+
+    return output
 
 @njit(parallel=True)
 def filter_mask_by_boundary(mask, boundary_indices, offset=30):
@@ -255,3 +256,15 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
     image_with_lidar = cv2.addWeighted(image_with_lidar, alpha, lidar_overlay, beta, gamma)
 
     return image_with_lidar
+
+def filter_point_cloud_by_image(xyz_proj, xyz_c, height, width):
+
+    x = xyz_proj[:, 0]
+    y = xyz_proj[:, 1]
+
+    valid_mask = (x >= 0) & (x < width) & (y >= 0) & (y < height)
+
+    xyz_proj = xyz_proj[valid_mask]
+    xyz_c    = xyz_c[valid_mask]
+
+    return xyz_proj, xyz_c

@@ -4,12 +4,11 @@ from rosbags.typesys import Stores, get_typestore
 import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 import pyzed.sl as sl
 from stereo_svo import SVOCamera
 from transforms import *
-from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask, merge_lidar_onto_image
+from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask, merge_lidar_onto_image, filter_point_cloud_by_image
 import time
 from yolo import YoloSeg
 from fastSAM import FastSAMSeg
@@ -174,7 +173,6 @@ def main():
 
     rwps3d.set_camera_params(cam_params, P1)
 
-
     # Extracting data
     gen_svo = gen_svo_images()
     lidar_data = gen_ma2_lidar_points()
@@ -193,7 +191,12 @@ def main():
             break
 
         timestamp, left_img, disparity_img, depth_img, = next_svo
+        left_img = np.ascontiguousarray(left_img, dtype=np.uint8)
+        disparity_img  = np.ascontiguousarray(disparity_img,  dtype=np.float32)
+        depth_img      = np.ascontiguousarray(depth_img,      dtype=np.float32)
         depth_img[depth_img > 100] = np.nan
+
+
         lidar_idx, lidar_timestamp = find_closest_timestamp(lidar_timestamps, timestamp)
         gnss_idx, gnss_timestamp = find_closest_timestamp(gnss_timestamps, timestamp)
 
@@ -210,10 +213,7 @@ def main():
         
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
-        
-        
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
-        
 
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
@@ -227,6 +227,8 @@ def main():
         #water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
         # Create Stixels
+
+        xyz_proj, xyz_c = filter_point_cloud_by_image(xyz_proj, xyz_c, height, width)
         
         start_time = time.time()
         stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c)
@@ -235,10 +237,10 @@ def main():
         # Display
         
         runtime_ms = (end_time - start_time) * 1000
-        #print(f"Processing time: {runtime_ms:.2f} ms")
+        print(f"Total time: {runtime_ms:.2f} ms")
 
-        #pink_color = [255, 0, 255]
-        #water_img_filtered = blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
+        pink_color = [255, 0, 255]
+        water_img_filtered = blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
         #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
         stixel_img = stixels.overlay_stixels_on_image(left_img)
 
@@ -247,7 +249,8 @@ def main():
         #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
 
         #cv2.imshow("left", left_img)
-        #cv2.imshow("Filtered_mask", water_img_filtered)
+        
+        cv2.imshow("Filtered_mask", water_img_filtered)
         #cv2.imshow("Lidar stixel image", lidar_stixel_img)
         cv2.imshow("stixel image", stixel_img)
         cv2.waitKey(1)
