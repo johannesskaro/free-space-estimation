@@ -15,7 +15,8 @@ class YoloSeg:
         (H, W, D) = img.shape
 
         results = self.model.predict(
-            img, device=device, 
+            img, 
+            device=device, 
             show=False,
             retina_masks=False, 
             classes=[8], 

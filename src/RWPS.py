@@ -133,7 +133,6 @@ class RWPS:
         #)
         #o3d.visualization.draw_geometries([pcd, coord_frame])
 
-        # Check if there are enough points to segment plane
         if len(pcd.points) < self.ransac_n:
             print("RWPS failed. Not enough points to segment plane")
             self.prev_planemodel = None
@@ -147,7 +146,7 @@ class RWPS:
             probability=self.probability,
         )
 
-        if not plane_model.any():  # if plane_model is empty
+        if not plane_model.any(): 
             print("RWPS failed. No plane found in RANSAC")
             valid = False
             return None, np.array([0, 1, 0, 1]), valid

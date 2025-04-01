@@ -5,6 +5,8 @@ import cv2
 import torch
 import torch.nn.functional as F
 from utilities import calculate_iou
+import time
+from numba import njit, prange
 
 class FastSAMSeg:
     """
@@ -173,8 +175,11 @@ class FastSAMSeg:
 
         H, W = img.shape[:2]
         contour_mask = np.zeros((H, W))
-
+        start_time = time.time( )
         result = self._segment_img(img, device=device)
+        end_time = time.time()
+        runtime_ms = (end_time - start_time) * 1000
+        #print(f"Segment img: {runtime_ms:.2f} ms")
 
         if result is None or not hasattr(result, 'masks') or result.masks is None:
             print("No masks found by fastSAM!")
@@ -234,13 +239,75 @@ class FastSAMSeg:
             else:
                 cleaned_mask = matched_mask
 
-            # Final resize
             cleaned_mask_resized = cv2.resize(cleaned_mask, (W, H), interpolation=cv2.INTER_NEAREST)
-
             return contour_mask_resized, upper_contour_mask_resized, cleaned_mask_resized
         
         else:
             return contour_mask_resized, upper_contour_mask_resized, None
+        
+
+    def get_upper_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=1000) -> np.array:
+
+        H, W = img.shape[:2]
+
+        start_time = time.time( )
+        result = self._segment_img(img, device=device)
+        end_time = time.time()
+        runtime_ms = (end_time - start_time) * 1000
+        print(f"Segment img: {runtime_ms:.2f} ms")
+
+        if result is None or not hasattr(result, 'masks') or result.masks is None:
+            print("No masks found by fastSAM!")
+            return None, None
+
+        masks = result.masks.data
+        _, H_mask, W_mask = masks.shape
+
+        binary_masks = (masks > 0.5).to(torch.uint8)
+        areas = binary_masks.view(binary_masks.size(0), -1).sum(dim=1)  # Sum over H*W
+        valid_indices = areas > min_area
+        binary_masks = binary_masks[valid_indices]
+        binary_masks = binary_masks.cpu().numpy()
+        
+        upper_contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)
+
+        scale_w = W / W_mask
+        scale_h = H / H_mask
+
+        best_iou = 0
+        matched_index = -1
+
+        if input_mask is not None:
+            input_mask_resized = cv2.resize(input_mask, (W_mask, H_mask), interpolation=cv2.INTER_NEAREST)
+        
+        for i, mask in enumerate(binary_masks):
+            if input_mask is not None:
+                iou = calculate_iou_numba(input_mask_resized, mask)
+                if iou > best_iou:
+                    best_iou = iou
+                    matched_index = i
+
+            upper_line = get_upper_contour_line_numba(mask)
+            upper_contour_mask_intermediate = bitwise_or(upper_contour_mask_intermediate, upper_line)
+
+        upper_contour_mask_resized = cv2.resize(upper_contour_mask_intermediate, None, fx=scale_w, fy=scale_h, interpolation=cv2.INTER_NEAREST)
+
+        if input_mask is not None and matched_index >= 0:
+            matched_mask = binary_masks[matched_index]
+
+            all_other_masks = np.delete(binary_masks, matched_index, axis=0)
+
+            if len(all_other_masks) > 0:
+                combined_other_masks = combine_masks_numba(all_other_masks)
+                cleaned_mask = matched_mask & (~combined_other_masks)
+            else:
+                cleaned_mask = matched_mask
+
+            cleaned_mask_resized = cv2.resize(cleaned_mask, (W, H), interpolation=cv2.INTER_NEAREST)
+            return upper_contour_mask_resized, cleaned_mask_resized
+        
+        else:
+            return upper_contour_mask_resized, None
     
     
     def get_upper_contour_line(self, mask) -> np.array:
@@ -261,3 +328,43 @@ class FastSAMSeg:
         return result_mask
     
 
+@njit(parallel=True)
+def get_upper_contour_line_numba(mask):
+    H, W = mask.shape
+    result_mask = np.zeros((H, W), dtype=np.uint8)
+
+    for x in prange(W):  # Parallel over columns
+        for y in range(H):
+            if mask[y, x] > 0:
+                result_mask[y, x] = 255
+                break  # stop after first non-zero pixel
+
+    return result_mask
+    
+@njit
+def calculate_iou_numba(mask1, mask2):
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    if union == 0:
+        return 0.0
+    return intersection / union
+
+@njit(parallel=True)
+def bitwise_or(dst, src):
+    H, W = dst.shape
+    for i in prange(H):  # Parallelize over rows
+        for j in range(W):
+            dst[i, j] = dst[i, j] | src[i, j]
+    return dst
+
+@njit(parallel=True)
+def combine_masks_numba(masks_3d):
+    N, H, W = masks_3d.shape
+    out = np.zeros((H, W), dtype=np.uint8)
+    for i in prange(H):
+        for j in range(W):
+            for k in range(N):
+                if masks_3d[k, i, j]:
+                    out[i, j] = 1
+                    break
+    return out

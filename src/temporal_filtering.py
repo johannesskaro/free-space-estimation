@@ -3,7 +3,7 @@ from collections import deque
 import cv2
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
-import json
+from numba import njit, prange
 
 class TemporalFiltering:
     def __init__(self, cam_matrix, N, t_imu_to_cam, R_imu_to_cam):
@@ -26,23 +26,22 @@ class TemporalFiltering:
     def get_rotation_matrix(self, ori_quat):
         return R.from_quat(ori_quat).as_matrix()
 
-
+    
     def get_filtered_frame_no_motion_compensation(self, water_mask):
         if self.rolling_sum is None:
             self.rolling_sum = np.zeros_like(water_mask, dtype=np.int32)
 
         if len(self.past_frames) < self.N:
-            smoothed_water_mask = water_mask
-
+            smoothed_water_mask = water_mask.copy()
         else:
-            mask_sum = self.rolling_sum
             threshold = self.N * 2 // 3
-            thresholded_mask = (mask_sum >= threshold).astype(np.uint8)
-            smoothed_water_mask = np.logical_or(water_mask, thresholded_mask).astype(int)
-        
+            smoothed_water_mask = threshold_and_logical_or(
+                water_mask, self.rolling_sum, threshold
+            )
+
         if len(self.past_frames) == self.N:
             oldest_frame = self.past_frames[0]
-            self.rolling_sum -= oldest_frame 
+            self.rolling_sum -= oldest_frame
 
         self.rolling_sum += water_mask
         self.add_frame(water_mask)
@@ -96,3 +95,18 @@ class TemporalFiltering:
         self.add_frame(water_mask)
         self.add_pose(curr_pose)
         return smoothed_water_mask
+    
+
+@njit(parallel=True)
+def threshold_and_logical_or(water_mask, rolling_sum, threshold):
+    H, W = water_mask.shape
+    smoothed = np.empty((H, W), dtype=np.uint8)
+
+    for i in prange(H):
+        for j in range(W):
+            if rolling_sum[i, j] >= threshold or water_mask[i, j] == 1:
+                smoothed[i, j] = 1
+            else:
+                smoothed[i, j] = 0
+
+    return smoothed

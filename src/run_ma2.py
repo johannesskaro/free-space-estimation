@@ -3,7 +3,7 @@ from rosbags.serde import deserialize_cdr
 from rosbags.typesys import Stores, get_typestore
 import cv2
 import numpy as np
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation as Rot
 from shapely.geometry.polygon import Polygon
 import pyzed.sl as sl
 from stereo_svo import SVOCamera
@@ -165,11 +165,18 @@ def main():
     cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
     P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
 
+    #t_body_to_cam = np.array([-TRANS_FLOOR_TO_LIDAR[0], -TRANS_FLOOR_TO_LIDAR[1], TRANS_FLOOR_TO_LIDAR[2]])
+    t_body_to_cam = np.array([- TRANS_FLOOR_TO_LIDAR[1], - TRANS_FLOOR_TO_LIDAR[0]])
+
+    #rot_yaw_180 = Rot.from_euler('z', np.pi).as_matrix()
+    #R_body_to_cam = rot_yaw_180 @ ROT_FLOOR_TO_LIDAR 
+    R_body_to_cam = np.eye(2)
+
     yolo = YoloSeg(model_path=yolo_model_path)
     fastsam = FastSAMSeg(model_path=fastsam_model_path)
     rwps3d = RWPS(config_file=rwps_config_path)
-    temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=TRANS_FLOOR_TO_CAM, R_imu_to_cam=ROT_FLOOR_TO_LIDAR)
-    stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params)
+    temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=t_body_to_cam, R_imu_to_cam=R_body_to_cam)
+    stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params, t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam)
 
     rwps3d.set_camera_params(cam_params, P1)
 
@@ -179,6 +186,9 @@ def main():
     gnss_data_ned = gen_ma2_gnss_ned()
     lidar_timestamps = np.array([entry[0] for entry in lidar_data])
     gnss_timestamps = np.array([entry[0] for entry in gnss_data_ned])
+
+    curr_pose = np.zeros(7)
+    curr_pose[3:] = [0, 0, 0, 1]  # Identity quaternion
 
     iterating = True
 
@@ -204,17 +214,18 @@ def main():
         xyz_intensity = lidar_data[lidar_idx][2]
         xyz_c = lidar_data[lidar_idx][3]
 
+        prev_pose = curr_pose
         pos_ned = gnss_data_ned[gnss_idx][1]
         ori_quat = gnss_data_ned[gnss_idx][2]
         curr_pose = np.concatenate([pos_ned, ori_quat])
 
         
         # Processing
-        
+        start_time = time.time()
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
-
+        
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
         
@@ -222,16 +233,19 @@ def main():
         
         water_mask_filtered = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
         
-        
-        #boat_mask = yolo.get_boat_mask(left_img)
-        #water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
+        boat_mask = yolo.get_boat_mask(left_img)
+        water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
         # Create Stixels
-
+        
         xyz_proj, xyz_c = filter_point_cloud_by_image(xyz_proj, xyz_c, height, width)
         
-        start_time = time.time()
         stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c)
+
+        
+        prev_stixel_footprints = stixels.get_prev_stixel_footprint()
+        prev_stixel_footprints = stixels.transform_prev_stixels_into_curr_frame(prev_stixel_footprints, prev_pose=prev_pose, curr_pose=curr_pose)
+
         end_time = time.time()
 
         # Display
@@ -244,15 +258,15 @@ def main():
         #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
         stixel_img = stixels.overlay_stixels_on_image(left_img)
 
-        #stixels.plot_stixel_footprint(stixel_footprints)
-
+        #stixels.plot_stixel_footprints(stixel_footprints)
+        #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
         #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
 
         #cv2.imshow("left", left_img)
-        
         cv2.imshow("Filtered_mask", water_img_filtered)
         #cv2.imshow("Lidar stixel image", lidar_stixel_img)
         cv2.imshow("stixel image", stixel_img)
+        #cv2.imshow("Contour mask", upper_contour_mask)
         cv2.waitKey(1)
         #time.sleep(0.1)
         

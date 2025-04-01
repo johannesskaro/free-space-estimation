@@ -4,17 +4,16 @@ from shapely.geometry import Polygon
 from collections import deque
 import utilities as ut
 import cv2
-from scipy.interpolate import griddata, Rbf
-from scipy import stats
-from fastSAM import FastSAMSeg
 from numba import njit, prange
 import matplotlib.pyplot as plt
 import time
+from scipy.spatial.transform import Rotation as R
+import math
 
 
 class Stixels:
         
-    def __init__(self, num_stixels, img_shape, cam_params, min_stixel_height=20):
+    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20):
         self.num_stixels = num_stixels
         self.img_shape = img_shape
         self.cam_params = cam_params
@@ -22,6 +21,11 @@ class Stixels:
         self.min_stixel_height = min_stixel_height
         self.stixel_list = np.zeros((self.num_stixels, 2), dtype=int)
         self.stixel_lidar_depths = np.zeros(self.num_stixels)
+        self.stixel_footprints = np.array([])
+        self.prev_stixel_footprints = np.array([])
+
+        self.R_body_to_cam = np.array(R_body_to_cam)
+        self.t_body_to_cam = np.array(t_body_to_cam)
 
 
     def create_stixels(self, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c):
@@ -40,8 +44,74 @@ class Stixels:
         stixel_footprints = self.get_stixel_BEV_footprints()
 
         return stixel_footprints, filtered_lidar_points
+    
+    def get_prev_stixel_footprint(self):
+        return self.prev_stixel_footprints
+    
+    
+    def associate_prev_stixels(self):
+        pass
 
     
+    def transform_prev_stixels_into_curr_frame_old(self, prev_stixels_points, prev_pose, curr_pose):
+        pos_prev = np.array([prev_pose[1], prev_pose[0]]) # Convert from NED to XZ-plane
+        ori_prev = prev_pose[3:]
+        pos_curr = np.array([curr_pose[1], curr_pose[0]]) # Convert from NED to XZ-plane
+        ori_curr = curr_pose[3:]
+
+        #t_curr_to_prev = pos_prev - pos_curr
+
+        r_prev = R.from_quat(ori_prev)
+        ea_prev = r_prev.as_euler('xyz', degrees=False)
+        heading_prev = ea_prev[2]
+        heading_prev = heading_prev + np.pi #This is only for MA2, since it is driving backwards, remove for BlueBoat
+        R_prev = ut.rotation_matrix(heading_prev)
+
+        r_curr = R.from_quat(ori_curr)
+        ea_curr = r_curr.as_euler('xyz', degrees=False)
+        heading_curr = ea_curr[2]
+        heading_curr = heading_curr + np.pi #This is only for MA2, since it is driving backwards, remove for BlueBoat
+        R_curr = ut.rotation_matrix(heading_curr)
+
+        transformed_points = []
+
+        t_world_to_cam_prev = R_prev.dot(self.t_body_to_cam) + pos_prev
+        t_world_to_cam_curr = R_curr.dot(self.t_body_to_cam) + pos_curr
+
+
+        for p_cam_prev in prev_stixels_points:
+
+            p_world_prev = R_prev.dot(p_cam_prev) + t_world_to_cam_prev
+            p_cam_curr = R_curr.T.dot(p_world_prev - t_world_to_cam_curr)
+            transformed_points.append(p_cam_curr)
+
+        return transformed_points
+    
+    def transform_prev_stixels_into_curr_frame(self, p_cam_prev, prev_pose, curr_pose):
+        if p_cam_prev.size == 0:
+            return np.empty((0, 2))
+
+        pos_prev = np.array([prev_pose[1], prev_pose[0]]) # Convert from NED to XZ-plane
+        pos_curr = np.array([curr_pose[1], curr_pose[0]]) # Convert from NED to XZ-plane
+        ori_prev = prev_pose[3:]
+        ori_curr = curr_pose[3:]
+
+        # + np.pi is only for MA2, since it is driving backwards, remove for BlueBoat
+        heading_prev = R.from_quat(ori_prev).as_euler('xyz', degrees=False)[2] + np.pi
+        heading_curr = R.from_quat(ori_curr).as_euler('xyz', degrees=False)[2] + np.pi
+
+        R_prev = ut.rotation_matrix(heading_prev)
+        R_curr = ut.rotation_matrix(heading_curr)
+
+        t_world_to_cam_prev = R_prev.dot(self.t_body_to_cam) + pos_prev
+        t_world_to_cam_curr = R_curr.dot(self.t_body_to_cam) + pos_curr
+
+        #p_cam_prev = np.asarray(prev_stixel_points)
+        p_world_prev = (R_prev.dot(p_cam_prev.T)).T + t_world_to_cam_prev
+        p_cam_curr = (R_curr.T.dot((p_world_prev - t_world_to_cam_curr).T)).T
+
+        return p_cam_curr
+
 
     def get_stixel_img_pos_list(self, free_space_boundary, top_boundary):
 
@@ -83,6 +153,8 @@ class Stixels:
 
     def get_stixel_BEV_footprints(self):
 
+        self.prev_stixel_footprints = self.stixel_footprints
+
         X = np.full(self.num_stixels, np.nan)
         Y = np.full(self.num_stixels, np.nan)
         Z = np.full(self.num_stixels, np.nan)
@@ -109,17 +181,21 @@ class Stixels:
 
         footprint_enu_sorted = footprint_enu[sorted_indices]
 
+        self.stixel_footprints = footprint_enu_sorted
+
         return footprint_enu_sorted
     
     def get_horizontal_disp_edges(self, disparity_img, threshold=0.3):
-        
+    
         
         normalized_disparity = normalize_image(disparity_img)
+        #normalized_disparity = cv2.normalize(disparity_img, None, 0, 1, cv2.NORM_MINMAX)
+
         blurred_image = cv2.GaussianBlur(normalized_disparity, (3, 3), 0)
         grad_y = cv2.Sobel(blurred_image, cv2.CV_32F, 0, 1, ksize=5)
-        
+        #grad_y = cv2.convertScaleAbs(grad_y)
         grad_y = (grad_y > threshold).astype(np.uint8)
-
+        #_, grad_y = cv2.threshold(grad_y, threshold, 1, cv2.THRESH_BINARY)
 
         return grad_y
     
@@ -127,7 +203,7 @@ class Stixels:
         H, W = disparity_img.shape
 
         start_time = time.time()
-        grad_y = self.get_horizontal_disp_edges(disparity_img, free_space_boundary)
+        grad_y = self.get_horizontal_disp_edges(disparity_img)
 
         end_time = time.time()
         runtime_ms = (end_time - start_time) * 1000
@@ -138,7 +214,7 @@ class Stixels:
         upper_contours = ut.filter_mask_by_boundary(upper_contours, free_space_boundary, offset=15)
         upper_contours = ut.get_bottommost_line(upper_contours)
 
-        cv2.imshow("grad_y", grad_y*255)
+        #cv2.imshow("grad_y", grad_y.astype(np.uint8)*255)
         #cv2.imshow("upper contours", upper_contours*255)
         
         v_f_array = get_v_f_array(free_space_boundary, self.stixel_width, self.num_stixels, H)
@@ -199,11 +275,15 @@ class Stixels:
         return blended_image
     
 
-    def plot_stixel_footprint(self, footprints):
+    def plot_stixel_footprints(self, footprints):
 
         plt.figure(figsize=(8,8))
 
         origin = np.array([0, 0])
+
+        if len(footprints) == 0:
+            return 
+        
         footprints = np.vstack([origin, footprints])
 
         xs, ys = zip(*footprints)
@@ -221,6 +301,30 @@ class Stixels:
         plt.show(block=False)
         plt.pause(1)  # Display the plot for a short period
         plt.close()
+
+    def plot_prev_and_curr_stixel_footprints(self, prev_stixels, curr_stixels):
+        if prev_stixels.size == 0:
+            return 
+        
+        plt.figure(figsize=(8,8))
+        
+        first = True
+        for (x, y) in prev_stixels:
+            plt.scatter(x, y, color='red', marker='o', s=50, label='Prev Stixels' if first else "")
+            first = False
+        
+        first = True
+        for (x, y) in curr_stixels:
+            plt.scatter(x, y, color='blue', marker='o', s=50, label='Curr Stixels' if first else "")
+            first = False
+
+        plt.xlabel("X [m]")
+        plt.ylabel("Z [m]")
+
+        plt.legend()
+        plt.show()
+        
+        
 
 
 @njit(parallel=True)

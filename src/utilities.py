@@ -3,7 +3,7 @@ import numpy as np
 import scipy.io
 from scipy.interpolate import interp1d
 import json
-import os
+import math
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from numba import njit, prange
@@ -91,6 +91,36 @@ def calculate_3d_points(X, Y, d, cam_params):
 
     return np.array([X_o, Y_o, Z_o]).T
 
+
+def rotation_matrix(theta):
+    return np.array([[np.cos(theta), -np.sin(theta)],
+                     [np.sin(theta),  np.cos(theta)]])
+
+def transform_matrix_2d(theta, t):
+    c, s = np.cos(theta), np.sin(theta)
+    T = np.array([
+        [c, -s, t[0]],
+        [s,  c, t[1]],
+        [0,  0,   1 ]
+    ])
+    return T
+
+def transform_matrix(R, t):
+    H = np.eye(4)
+    H[:3, :3] = R
+    H[:3, 3] = t
+    return H
+
+def invert_transformation(H):
+    R = H[:3, :3]
+    t = H[:3, 3]
+    H_transformed = np.block(
+        [
+            [R.T, -R.T.dot(t)[:, np.newaxis]],
+            [np.zeros((1, 3)), np.ones((1, 1))],
+        ]
+    )
+    return H_transformed
 
 
 def visualize_lidar_points(points):
