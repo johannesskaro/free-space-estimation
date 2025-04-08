@@ -38,7 +38,7 @@ class YoloSeg:
 
                 cv2.fillPoly(boat_mask, [polygon], color=255)
 
-        #cv2.imshow("Boat mask", boat_mask)
+        cv2.imshow("Boat mask", boat_mask)
 
         return boat_mask
     

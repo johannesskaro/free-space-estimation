@@ -65,9 +65,6 @@ def rotate_point(x, y, image_width, image_height, roll_rad, initial_roll_rad=0):
 
 
 def calculate_iou(mask1, mask2):
-    """
-    Calculate Intersection over Union (IoU) between two binary masks.
-    """
     mask1 = (mask1 > 0)
     mask2 = (mask2 > 0)
 
@@ -78,6 +75,12 @@ def calculate_iou(mask1, mask2):
         return 0.0  # Avoid division by zero
 
     return intersection / union
+
+def distance_from_point_to_line(point, line):
+    a, b, c = line
+    x, y = point
+    dist = np.abs(a*x +b*y + c) / np.sqrt(a**2 + b**2)
+    return dist
 
 
 
@@ -172,6 +175,19 @@ def get_water_mask_from_contour_mask(contour_mask, offset=30):
     water_mask = (rows >= boundary).astype(np.uint8)
     
     return water_mask
+
+
+def get_high_contrast_colors(n, cmap_name='jet'):
+    base_colors = plt.cm.get_cmap(cmap_name)(np.linspace(0, 1, n))
+    if n <= 1:
+        return base_colors
+    
+    # Golden ratio conjugate
+    phi = 0.618033988749895  
+    # Compute a permutation index using the fractional part of (index * phi)
+    indices = np.argsort((np.arange(n) * phi) % 1)
+    
+    return base_colors[indices]
 
 
 @njit(parallel=True)

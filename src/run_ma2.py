@@ -22,7 +22,7 @@ import warnings
 #Scen1 - Into tunnel
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_11-30-51_28170706_HD1080_FPS15.svo"
 #ROSBAG_NAME = "scen1"
-#START_TIMESTAMP = 1689067892194593719 #+ 120000000000
+#START_TIMESTAMP = 1689067892194593719 + 120000000000
 #ma2_clap_timestamps = np.array([1689068801634572145, 1689068803035078922, 1689068804635190937, 1689068806436892969, 1689068809235474632]) 
 #svo_clap_timestamps = np.array([1689068801796052729, 1689068803135787729, 1689068804743766729, 1689068806686255729, 1689068809298756729]) 
 
@@ -39,7 +39,7 @@ import warnings
 SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 #+ 14000000000
+START_TIMESTAMP = 1689070899731613030 #+ 16000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -62,7 +62,7 @@ svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 168907
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
 #ROSBAG_NAME = "scen6"
-#START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
+#START_TIMESTAMP = 1689073008428931880 + 2000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
 #ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
@@ -221,7 +221,7 @@ def main():
 
         
         # Processing
-        start_time = time.time()
+        
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
@@ -236,17 +236,23 @@ def main():
         boat_mask = yolo.get_boat_mask(left_img)
         water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
-        # Create Stixels
+        # Stixel pipeline
         
         xyz_proj, xyz_c = filter_point_cloud_by_image(xyz_proj, xyz_c, height, width)
         
-        stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c)
-
+        stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c, boat_mask)
         
         prev_stixel_footprints = stixels.get_prev_stixel_footprint()
-        prev_stixel_footprints = stixels.transform_prev_stixels_into_curr_frame(prev_stixel_footprints, prev_pose=prev_pose, curr_pose=curr_pose)
+
+        start_time = time.time()
+
+        prev_stixel_footprints_curr_frame = stixels.transform_prev_stixels_into_curr_frame(prev_stixel_footprints, prev_pose=prev_pose, curr_pose=curr_pose)
+
+        association_list = stixels.associate_prev_stixels(prev_stixel_footprints_curr_frame)
+
 
         end_time = time.time()
+
 
         # Display
         
@@ -258,7 +264,9 @@ def main():
         #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
         stixel_img = stixels.overlay_stixels_on_image(left_img)
 
+
         #stixels.plot_stixel_footprints(stixel_footprints)
+        stixels.plot_projection_rays_and_associated_points(prev_stixel_footprints_curr_frame, stixels.prev_stixel_validity, association_list)
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
         #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
 

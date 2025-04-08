@@ -13,22 +13,33 @@ import math
 
 class Stixels:
         
-    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20):
+    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20, max_range=40):
+
         self.num_stixels = num_stixels
         self.img_shape = img_shape
         self.cam_params = cam_params
         self.stixel_width  = int(img_shape[1] // self.num_stixels)
         self.min_stixel_height = min_stixel_height
+        self.max_range = max_range
+
         self.stixel_list = np.zeros((self.num_stixels, 2), dtype=int)
         self.stixel_lidar_depths = np.zeros(self.num_stixels)
         self.stixel_footprints = np.array([])
+        self.stixel_validity = np.full(num_stixels, False, dtype=bool)
+        self.dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
+
+
         self.prev_stixel_footprints = np.array([])
+        self.prev_stixel_validity = np.full(num_stixels, False, dtype=bool)
+        self.prev_dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
 
         self.R_body_to_cam = np.array(R_body_to_cam)
         self.t_body_to_cam = np.array(t_body_to_cam)
 
+        self.projection_rays = self.get_projection_rays()
 
-    def create_stixels(self, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c):
+
+    def create_stixels(self, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, boat_mask=None):
 
         free_space_boundary = get_free_space_boundary(water_mask)
         start_time = time.time()
@@ -39,7 +50,7 @@ class Stixels:
 
         
         top_boundary = get_optimal_height_numba(SSM, free_space_boundary_depth, free_space_boundary, self.num_stixels)
-        self.get_stixel_img_pos_list(free_space_boundary, top_boundary)
+        self.get_stixel_img_pos_list(free_space_boundary, top_boundary, boat_mask)
         filtered_lidar_points = self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
         stixel_footprints = self.get_stixel_BEV_footprints()
 
@@ -48,44 +59,116 @@ class Stixels:
     def get_prev_stixel_footprint(self):
         return self.prev_stixel_footprints
     
+    def get_projection_rays(self):
+
+        fx = self.cam_params["fx"]
+        cx = self.cam_params["cx"]
+
+        projection_rays = np.zeros((self.num_stixels, 3))
+
+        for n in range(self.num_stixels):
+            u = (n + 1) * self.stixel_width - self.stixel_width // 2
+            x0 = (u - cx) / fx
+            ray = np.array([1, -x0, 0])
+            projection_rays[n] = ray
+
+        return projection_rays
+
     
-    def associate_prev_stixels(self):
+    def associate_prev_stixels(self, prev_stixel_footprints, dist_threshold = 1):
+        N = self.num_stixels
+        association_list = np.full(N, -1, dtype=int)
+        pts = prev_stixel_footprints
+
+        for n, ray in enumerate(self.projection_rays):
+
+            if self.dynamic_stixel_list[n] == True:
+                continue
+
+            if prev_stixel_footprints.size == 0:
+                continue
+
+            idx = n
+            idx_minus = n-1 if n-1 >= 0 else n
+            idx_plus = n+1 if n+1 < N else n
+
+            d_n_minus_1 = ut.distance_from_point_to_line(pts[idx_minus], ray)
+            d_n = ut.distance_from_point_to_line(pts[n], ray)
+            d_n_plus_1 = ut.distance_from_point_to_line(pts[idx_plus], ray)
+
+            #print("d_n_minus_1: ", d_n_minus_1)
+            #print("d_n: ", d_n)
+            #print("d_n_plus_1: ", d_n_plus_1)
+            #print(" ----- ")
+
+            iterating = True
+
+            if d_n <= d_n_minus_1 and d_n <= d_n_plus_1:
+                if d_n < dist_threshold:
+                    if self.prev_dynamic_stixel_list[idx] == False and self.prev_stixel_validity[idx] == True:
+                        association_list[n] = idx
+
+            elif d_n_minus_1 < d_n and d_n_minus_1 < d_n_plus_1:
+                i = 2
+                d_n_minus_i_prev = d_n_minus_1
+                while iterating:
+                    print("minus", n)
+                    idx = n - i
+                    if idx < 0:
+                        if d_n_minus_i_prev < dist_threshold:
+                            if self.prev_dynamic_stixel_list[0] == False and self.prev_stixel_validity[0] == True:
+                                association_list[n] = 0
+                        iterating = False
+                        break
+
+                    d_n_minus_i = ut.distance_from_point_to_line(pts[idx], ray)
+                    if d_n_minus_i < d_n_minus_i_prev:
+                        d_n_minus_i_prev = d_n_minus_i
+                        i += 1
+                        continue
+                    else:
+                        if d_n_minus_i_prev < dist_threshold:
+                            if self.prev_dynamic_stixel_list[idx + 1] == False and self.prev_stixel_validity[idx + 1] == True:
+                                association_list[n] = idx + 1
+                        iterating = False
+                        break
+
+            elif d_n_plus_1 < d_n and d_n_plus_1 < d_n_minus_1:
+                i = 2
+                d_n_plus_i_prev = d_n_plus_1
+                while iterating:
+                    print("plus", n)
+                    idx = n + i
+                    if idx >= N:
+                        if d_n_plus_i_prev < dist_threshold:
+                            if self.prev_dynamic_stixel_list[N - 1] == False and self.prev_stixel_validity[N - 1] == True:
+                                association_list[n] = N - 1
+                        iterating = False
+                        break
+
+                    d_n_plus_i = ut.distance_from_point_to_line(pts[idx], ray)
+                    if d_n_plus_i < d_n_plus_i_prev:
+                        d_n_plus_i_prev = d_n_plus_i
+                        i += 1
+                        continue
+                    else:
+                        if d_n_plus_i_prev < dist_threshold:
+                            if self.prev_dynamic_stixel_list[idx - 1] == False and self.prev_stixel_validity[idx - 1] == True:
+                                association_list[n] = idx - 1
+                        iterating = False
+                        break
+            else:
+                print("Error associating previous Stixels for index", n)
+
+        #print(association_list)
+
+        return association_list
+    
+
+    def recursive_height_filter(self, association_list):
         pass
 
-    
-    def transform_prev_stixels_into_curr_frame_old(self, prev_stixels_points, prev_pose, curr_pose):
-        pos_prev = np.array([prev_pose[1], prev_pose[0]]) # Convert from NED to XZ-plane
-        ori_prev = prev_pose[3:]
-        pos_curr = np.array([curr_pose[1], curr_pose[0]]) # Convert from NED to XZ-plane
-        ori_curr = curr_pose[3:]
 
-        #t_curr_to_prev = pos_prev - pos_curr
-
-        r_prev = R.from_quat(ori_prev)
-        ea_prev = r_prev.as_euler('xyz', degrees=False)
-        heading_prev = ea_prev[2]
-        heading_prev = heading_prev + np.pi #This is only for MA2, since it is driving backwards, remove for BlueBoat
-        R_prev = ut.rotation_matrix(heading_prev)
-
-        r_curr = R.from_quat(ori_curr)
-        ea_curr = r_curr.as_euler('xyz', degrees=False)
-        heading_curr = ea_curr[2]
-        heading_curr = heading_curr + np.pi #This is only for MA2, since it is driving backwards, remove for BlueBoat
-        R_curr = ut.rotation_matrix(heading_curr)
-
-        transformed_points = []
-
-        t_world_to_cam_prev = R_prev.dot(self.t_body_to_cam) + pos_prev
-        t_world_to_cam_curr = R_curr.dot(self.t_body_to_cam) + pos_curr
-
-
-        for p_cam_prev in prev_stixels_points:
-
-            p_world_prev = R_prev.dot(p_cam_prev) + t_world_to_cam_prev
-            p_cam_curr = R_curr.T.dot(p_world_prev - t_world_to_cam_curr)
-            transformed_points.append(p_cam_curr)
-
-        return transformed_points
     
     def transform_prev_stixels_into_curr_frame(self, p_cam_prev, prev_pose, curr_pose):
         if p_cam_prev.size == 0:
@@ -111,9 +194,11 @@ class Stixels:
         p_cam_curr = (R_curr.T.dot((p_world_prev - t_world_to_cam_curr).T)).T
 
         return p_cam_curr
+    
 
+    def get_stixel_img_pos_list(self, free_space_boundary, top_boundary, boat_mask=None):
 
-    def get_stixel_img_pos_list(self, free_space_boundary, top_boundary):
+        self.prev_dynamic_stixel_list = self.dynamic_stixel_list
 
         fsb_2d = free_space_boundary.reshape(self.num_stixels, self.stixel_width)
         v_f_array = np.median(fsb_2d, axis=1).astype(int) 
@@ -127,6 +212,9 @@ class Stixels:
         stixel_list = np.column_stack((v_top_array, v_f_array))
 
         self.stixel_list[:] = stixel_list
+
+        if boat_mask is not None:
+            self.dynamic_stixel_list = compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, self.stixel_width, self.num_stixels)
 
         return self.stixel_list
     
@@ -154,6 +242,7 @@ class Stixels:
     def get_stixel_BEV_footprints(self):
 
         self.prev_stixel_footprints = self.stixel_footprints
+        self.prev_stixel_validity = self.stixel_validity
 
         X = np.full(self.num_stixels, np.nan)
         Y = np.full(self.num_stixels, np.nan)
@@ -163,27 +252,33 @@ class Stixels:
         for n, stixel in enumerate(self.stixel_list):
 
             if np.isnan(self.stixel_lidar_depths[n]):
+                self.stixel_validity[n] = False
                 Z_invalid = np.append(Z_invalid, n)
+                z = self.max_range
             else:
-                X[n] = n * self.stixel_width + self.stixel_width // 2
-                Y[n] = stixel[1]
-                Z[n] = self.stixel_lidar_depths[n]
+                self.stixel_validity[n] = True
+                z = self.stixel_lidar_depths[n]
 
-        X = np.delete(X, Z_invalid)
-        Y = np.delete(Y, Z_invalid)
-        Z = np.delete(Z, Z_invalid)
+            
+            X[n] = n * self.stixel_width + self.stixel_width // 2
+            Y[n] = stixel[1]
+            Z[n] = z
+
+        #X = np.delete(X, Z_invalid)
+        #Y = np.delete(Y, Z_invalid)
+        #Z = np.delete(Z, Z_invalid)
 
         points_3d = ut.calculate_3d_points(X, Y, Z, self.cam_params)
         footprint_enu = points_3d[:, [0, 2]]
 
-        angles = np.arctan2(footprint_enu[:, 1], footprint_enu[:, 0])
-        sorted_indices = np.argsort(angles)
+        #angles = np.arctan2(footprint_enu[:, 1], footprint_enu[:, 0])
+        #sorted_indices = np.argsort(angles)
 
-        footprint_enu_sorted = footprint_enu[sorted_indices]
+        #footprint_enu_sorted = footprint_enu[sorted_indices]
 
-        self.stixel_footprints = footprint_enu_sorted
+        self.stixel_footprints = footprint_enu
 
-        return footprint_enu_sorted
+        return footprint_enu
     
     def get_horizontal_disp_edges(self, disparity_img, threshold=0.3):
     
@@ -301,6 +396,93 @@ class Stixels:
         plt.show(block=False)
         plt.pause(1)  # Display the plot for a short period
         plt.close()
+
+    def plot_projection_rays_and_associated_points(self, points, points_validity, association_list):
+
+        plt.figure(figsize=(8,8))
+
+        colors = ut.get_high_contrast_colors(self.num_stixels, cmap_name='jet')
+
+        p1 = np.array([0, 0])
+        first = True
+        for n, ray in enumerate(self.projection_rays):
+            a, b, c, = ray
+            z = self.stixel_lidar_depths[n]
+            if np.isnan(z):
+                z = self.max_range
+
+            p2 = np.array([-b*z, z])
+
+
+            associated_ray = association_list[n]
+            if associated_ray == -1:
+                color = "black"
+            else:
+                color = colors[associated_ray]
+
+            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=1, label=f"Rays" if first else "")
+            first = False
+
+        first = True
+        for n, (x, y) in enumerate(points):
+            if points_validity[n]:
+                plt.scatter(x, y, color=colors[n], marker='o', s=20, label='Stixel Footprints' if first else "")
+                first = False
+
+        
+        plt.legend()
+        plt.xlabel("X [m]")
+        plt.ylabel("Z [m]")
+        plt.show()
+
+    def plot_projection_rays_and_points_world(self, rays, points, pose, points_validity, association_list):
+
+        plt.figure(figsize=(8,8))
+
+        colors = ut.get_high_contrast_colors(self.num_stixels, cmap_name='jet')
+
+        origin = np.array([0, 0])
+        p1 = self.transform_points_into_world(origin, pose)
+
+        first = True
+        for n, ray in enumerate(rays):
+            a, b, c, = ray
+            direction = np.array([b, -a])
+            direction = direction / np.linalg.norm(direction)
+
+            z = self.stixel_lidar_depths[n]
+            if np.isnan(z):
+                z = self.max_range
+
+            p_cam = self.stixel_footprints[n]
+            length = np.linalg.norm(p_cam)
+
+            p2 = p1 - direction * length
+
+            associated_ray = association_list[n]
+            if associated_ray == -1:
+                color = "black"
+            else:
+                color = colors[associated_ray]
+
+            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=1, label=f"Rays" if first else "")
+            first = False
+
+        first = True
+        for n, (x, y) in enumerate(points):
+
+            plt.scatter(x, y, color=colors[n], marker='o', s=20, label='Stixel Footprints' if first else "")
+            first = False
+
+        ax = plt.gca()
+        ax.invert_yaxis()
+        ax.invert_xaxis()
+        plt.legend()
+        plt.xlabel("North [m]")
+        plt.ylabel("East [m]")
+        plt.show()
+
+
 
     def plot_prev_and_curr_stixel_footprints(self, prev_stixels, curr_stixels):
         if prev_stixels.size == 0:
@@ -632,3 +814,40 @@ def normalize_image(img, out_min=0.0, out_max=1.0):
             out[i, j] = val
 
     return out
+
+
+@njit(parallel=True)
+def compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, stixel_width, num_stixels):
+    # Use bool: True means dynamic, False means static.
+    dynamic = np.empty(num_stixels, dtype=np.bool_)
+    mask_height = boat_mask.shape[0]
+    mask_width  = boat_mask.shape[1]
+    
+    for n in prange(num_stixels):  # parallelized outer loop
+        v_top = v_top_array[n]
+        v_f = v_f_array[n]
+        
+        # If the region is invalid, mark as static.
+        if v_f <= v_top or v_top < 0 or v_f > mask_height:
+            dynamic[n] = False
+            continue
+        
+        u_start = n * stixel_width
+        u_end = (n + 1) * stixel_width
+        if u_end > mask_width:
+            u_end = mask_width
+        
+        boat_pixels = 0
+        total_pixels = 0
+        
+        # Loop over the ROI of the stixel.
+        for i in range(v_top, v_f):
+            for j in range(u_start, u_end):
+                total_pixels += 1
+                if boat_mask[i, j] > 0:
+                    boat_pixels += 1
+        
+        # Mark stixel as dynamic if boat pixels exceed half the ROI.
+        dynamic[n] = (total_pixels > 0 and boat_pixels > total_pixels / 2)
+        
+    return dynamic
