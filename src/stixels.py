@@ -22,15 +22,20 @@ class Stixels:
         self.min_stixel_height = min_stixel_height
         self.max_range = max_range
 
-        self.stixel_list = np.zeros((self.num_stixels, 2), dtype=int)
-        self.stixel_lidar_depths = np.zeros(self.num_stixels)
+        self.height_base_list = np.zeros((self.num_stixels, 2), dtype=int)
+        self.stixel_lidar_depths = np.zeros(self.num_stixels, dtype=float)
+        self.stixel_stereo_depths = np.zeros(self.num_stixels, dtype=float)
+        self.stixel_fused_depths = np.zeros(self.num_stixels, dtype=float)
+        self.stixel_fused_depths_var = np.zeros(self.num_stixels, dtype=float)
         self.stixel_footprints = np.array([])
-        self.stixel_validity = np.full(num_stixels, False, dtype=bool)
+        self.stixel_has_measurement = np.full(num_stixels, False, dtype=bool)
         self.dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
 
-
+        self.prev_height_base_list = np.zeros((self.num_stixels, 2), dtype=int)
+        self.prev_stixel_fused_depths = np.zeros(self.num_stixels, dtype=float)
+        self.prev_stixel_fused_depths_var = np.zeros(self.num_stixels, dtype=float)
         self.prev_stixel_footprints = np.array([])
-        self.prev_stixel_validity = np.full(num_stixels, False, dtype=bool)
+        self.prev_stixel_has_measurement = np.full(num_stixels, False, dtype=bool)
         self.prev_dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
 
         self.R_body_to_cam = np.array(R_body_to_cam)
@@ -43,14 +48,13 @@ class Stixels:
 
         free_space_boundary = get_free_space_boundary(water_mask)
         start_time = time.time()
-        SSM, free_space_boundary_depth = self.create_segmentation_score_map(disparity_img, depth_img, free_space_boundary, upper_contours)
+        SSM, stereo_depth = self.create_segmentation_score_map(disparity_img, depth_img, free_space_boundary, upper_contours)
         end_time = time.time()
         runtime_ms = (end_time - start_time) * 1000
         #print(f"SSM total: {runtime_ms:.2f} ms")
-
         
-        top_boundary = get_optimal_height_numba(SSM, free_space_boundary_depth, free_space_boundary, self.num_stixels)
-        self.get_stixel_img_pos_list(free_space_boundary, top_boundary, boat_mask)
+        top_boundary = get_optimal_height_numba(SSM, stereo_depth, free_space_boundary, self.num_stixels)
+        self.get_stixel_height_base_list(free_space_boundary, top_boundary, boat_mask)
         filtered_lidar_points = self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
         stixel_footprints = self.get_stixel_BEV_footprints()
 
@@ -69,7 +73,7 @@ class Stixels:
         for n in range(self.num_stixels):
             u = (n + 1) * self.stixel_width - self.stixel_width // 2
             x0 = (u - cx) / fx
-            ray = np.array([1, -x0, 0])
+            ray = np.array([-x0, 1, 0])
             projection_rays[n] = ray
 
         return projection_rays
@@ -105,18 +109,20 @@ class Stixels:
 
             if d_n <= d_n_minus_1 and d_n <= d_n_plus_1:
                 if d_n < dist_threshold:
-                    if self.prev_dynamic_stixel_list[idx] == False and self.prev_stixel_validity[idx] == True:
+                    if self.prev_dynamic_stixel_list[idx] == False and self.prev_stixel_has_measurement[idx] == True:
+                    #if self.prev_stixel_validity[idx] == True:
                         association_list[n] = idx
 
             elif d_n_minus_1 < d_n and d_n_minus_1 < d_n_plus_1:
                 i = 2
                 d_n_minus_i_prev = d_n_minus_1
                 while iterating:
-                    print("minus", n)
+                    #print("minus", n)
                     idx = n - i
                     if idx < 0:
                         if d_n_minus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[0] == False and self.prev_stixel_validity[0] == True:
+                            if self.prev_dynamic_stixel_list[0] == False and self.prev_stixel_has_measurement[0] == True:
+                            #if self.prev_stixel_validity[0] == True:
                                 association_list[n] = 0
                         iterating = False
                         break
@@ -128,7 +134,8 @@ class Stixels:
                         continue
                     else:
                         if d_n_minus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[idx + 1] == False and self.prev_stixel_validity[idx + 1] == True:
+                            if self.prev_dynamic_stixel_list[idx + 1] == False and self.prev_stixel_has_measurement[idx + 1] == True:
+                            #if self.prev_stixel_validity[idx + 1] == True:
                                 association_list[n] = idx + 1
                         iterating = False
                         break
@@ -137,11 +144,12 @@ class Stixels:
                 i = 2
                 d_n_plus_i_prev = d_n_plus_1
                 while iterating:
-                    print("plus", n)
+                    #print("plus", n)
                     idx = n + i
                     if idx >= N:
                         if d_n_plus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[N - 1] == False and self.prev_stixel_validity[N - 1] == True:
+                            if self.prev_dynamic_stixel_list[N - 1] == False and self.prev_stixel_has_measurement[N - 1] == True:
+                            #if self.prev_stixel_validity[N - 1] == True:
                                 association_list[n] = N - 1
                         iterating = False
                         break
@@ -153,7 +161,8 @@ class Stixels:
                         continue
                     else:
                         if d_n_plus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[idx - 1] == False and self.prev_stixel_validity[idx - 1] == True:
+                            if self.prev_dynamic_stixel_list[idx - 1] == False and self.prev_stixel_has_measurement[idx - 1] == True:
+                            #if self.prev_stixel_validity[idx - 1] == True:
                                 association_list[n] = idx - 1
                         iterating = False
                         break
@@ -165,8 +174,95 @@ class Stixels:
         return association_list
     
 
-    def recursive_height_filter(self, association_list):
-        pass
+    def recursive_height_filter(self, association_list, alpha=0.95):
+
+        for n in range(self.num_stixels):
+            if association_list[n] != -1:
+                idx = association_list[n]
+
+                v_top_curr = self.height_base_list[n, 0]
+                v_top_prev = self.prev_height_base_list[idx, 0]
+
+                v_top_lp = alpha * v_top_prev + (1 - alpha) * v_top_curr
+
+                #print("v_top_curr: ", v_top_curr)
+                #print("v_top_lp: ", v_top_lp)
+
+                self.height_base_list[n, 0] = v_top_lp
+
+    def recursive_depth_filter(self, association_list, prev_stixel_footprints_curr_frame, pose_prev, pose_curr):
+
+        #self.prev_stixel_fused_depths = self.stixel_fused_depths.copy()
+
+        pos_prev = pose_prev[:2]
+        pos_curr = pose_curr[:2]
+        ori_prev = pose_prev[3:]
+        ori_curr = pose_curr[3:]
+
+        delta_pos = pos_curr - pos_prev
+
+        heading_prev = R.from_quat(ori_prev).as_euler('xyz', degrees=False)[2] + np.pi
+        heading_curr = R.from_quat(ori_curr).as_euler('xyz', degrees=False)[2] + np.pi
+
+        delta_heading = heading_curr - heading_prev
+
+        C_pose = np.array([[0.01, 0, 0], 
+                           [0, 0.01, 0],
+                           [0, 0, 0.001225]])
+
+        fx = self.cam_params["fx"]
+        b = self.cam_params["b"]
+
+        for n in range(self.num_stixels):
+            z_lidar = self.stixel_lidar_depths[n]
+            z_stereo = self.stixel_stereo_depths[n]
+            
+            if np.isnan(z_lidar) or np.isinf(z_lidar):
+                z_lidar = 0
+                var_lidar = np.inf
+            else:
+                sigma_lidar = 0.01
+                var_lidar = sigma_lidar**2
+
+            if np.isnan(z_stereo) or np.isinf(z_stereo):
+                z_stereo = 0
+                var_stereo = np.inf
+            else:
+                sigma_px = 0.5 
+                sigma_stereo = sigma_px * z_stereo**2 / (fx * b)
+                var_stereo = sigma_stereo**2
+            
+            # Prediction step
+
+            if association_list[n] != -1:
+                idx = association_list[n]
+
+                z_fused_prev = prev_stixel_footprints_curr_frame[idx, 0]
+                var_fused_prev = self.prev_stixel_fused_depths_var[idx]
+
+                p = self.prev_stixel_footprints[idx]
+                J_z_motion = np.array([1, 0, -p[0]*np.sin(delta_heading) + p[1]*np.cos(delta_heading)])
+                sigma_motion = J_z_motion @ C_pose @ J_z_motion.T 
+
+                var_prop = var_fused_prev + sigma_motion**2 
+
+            else:
+                z_fused_prev = 0
+                var_prop = np.inf
+
+
+            # Update step
+
+            var_fused = 1 / ((1 / var_lidar) + (1 / var_stereo) + (1 / var_prop))
+            z_fused = var_fused * ((z_lidar / var_lidar) + (z_stereo / var_stereo) + (z_fused_prev / var_fused_prev))
+
+            # If all depths are invalid, set to max_range
+            if z_fused <= 0:
+                z_fused = self.max_range
+                self.stixel_has_measurement[n] = False
+
+            self.stixel_fused_depths[n] = z_fused
+
 
 
     
@@ -174,14 +270,19 @@ class Stixels:
         if p_cam_prev.size == 0:
             return np.empty((0, 2))
 
-        pos_prev = np.array([prev_pose[1], prev_pose[0]]) # Convert from NED to XZ-plane
-        pos_curr = np.array([curr_pose[1], curr_pose[0]]) # Convert from NED to XZ-plane
+        #pos_prev = np.array([prev_pose[1], prev_pose[0]]) # Convert from NED to XZ-plane
+        #pos_curr = np.array([curr_pose[1], curr_pose[0]]) # Convert from NED to XZ-plane
+        pos_prev = np.array([prev_pose[0], prev_pose[1]]) 
+        pos_curr = np.array([curr_pose[0], curr_pose[1]]) 
         ori_prev = prev_pose[3:]
         ori_curr = curr_pose[3:]
 
         # + np.pi is only for MA2, since it is driving backwards, remove for BlueBoat
         heading_prev = R.from_quat(ori_prev).as_euler('xyz', degrees=False)[2] + np.pi
         heading_curr = R.from_quat(ori_curr).as_euler('xyz', degrees=False)[2] + np.pi
+
+        #print("heading_curr: ", heading_curr * 180/np.pi)
+        #print("Direction: ", heading_curr * 180/np.pi - heading_prev * 180/np.pi)
 
         R_prev = ut.rotation_matrix(heading_prev)
         R_curr = ut.rotation_matrix(heading_curr)
@@ -196,9 +297,10 @@ class Stixels:
         return p_cam_curr
     
 
-    def get_stixel_img_pos_list(self, free_space_boundary, top_boundary, boat_mask=None):
+    def get_stixel_height_base_list(self, free_space_boundary, top_boundary, boat_mask=None):
 
-        self.prev_dynamic_stixel_list = self.dynamic_stixel_list
+        self.prev_height_base_list = self.height_base_list.copy()
+        self.prev_dynamic_stixel_list = self.dynamic_stixel_list.copy()
 
         fsb_2d = free_space_boundary.reshape(self.num_stixels, self.stixel_width)
         v_f_array = np.median(fsb_2d, axis=1).astype(int) 
@@ -209,22 +311,22 @@ class Stixels:
         mask = dist < self.min_stixel_height
         v_top_array[mask] = v_f_array[mask] - self.min_stixel_height
 
-        stixel_list = np.column_stack((v_top_array, v_f_array))
+        height_base_list = np.column_stack((v_top_array, v_f_array))
 
-        self.stixel_list[:] = stixel_list
+        self.height_base_list[:] = height_base_list
 
         if boat_mask is not None:
             self.dynamic_stixel_list = compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, self.stixel_width, self.num_stixels)
 
-        return self.stixel_list
+        return self.height_base_list
     
     
     def get_stixel_depths_from_lidar(self, xyz_proj, xyz_c):
 
         filtered_lidar_depths = []
 
-        stixel_tops = self.stixel_list[:, 0]
-        stixel_bases = self.stixel_list[:, 1]
+        stixel_tops = self.height_base_list[:, 0]
+        stixel_bases = self.height_base_list[:, 1]
 
         stixel_depths, count = assign_points_to_stixels_numba(
         xyz_proj, xyz_c,
@@ -241,15 +343,15 @@ class Stixels:
 
     def get_stixel_BEV_footprints(self):
 
-        self.prev_stixel_footprints = self.stixel_footprints
-        self.prev_stixel_validity = self.stixel_validity
+        self.prev_stixel_footprints = self.stixel_footprints.copy()
+        self.prev_stixel_has_measurement = self.stixel_has_measuremnt.copy()
 
         X = np.full(self.num_stixels, np.nan)
         Y = np.full(self.num_stixels, np.nan)
         Z = np.full(self.num_stixels, np.nan)
         Z_invalid = np.array([], dtype=int)
 
-        for n, stixel in enumerate(self.stixel_list):
+        for n, stixel in enumerate(self.height_base_list):
 
             if np.isnan(self.stixel_lidar_depths[n]):
                 self.stixel_validity[n] = False
@@ -260,7 +362,7 @@ class Stixels:
                 z = self.stixel_lidar_depths[n]
 
             
-            X[n] = n * self.stixel_width + self.stixel_width // 2
+            X[n] = (n + 1) * self.stixel_width - self.stixel_width // 2
             Y[n] = stixel[1]
             Z[n] = z
 
@@ -269,16 +371,17 @@ class Stixels:
         #Z = np.delete(Z, Z_invalid)
 
         points_3d = ut.calculate_3d_points(X, Y, Z, self.cam_params)
-        footprint_enu = points_3d[:, [0, 2]]
+        #footprint_enu = points_3d[:, [0, 2]]
+        footprint_ned = points_3d[:, [2, 0]]
 
         #angles = np.arctan2(footprint_enu[:, 1], footprint_enu[:, 0])
         #sorted_indices = np.argsort(angles)
 
         #footprint_enu_sorted = footprint_enu[sorted_indices]
 
-        self.stixel_footprints = footprint_enu
+        self.stixel_footprints = footprint_ned
 
-        return footprint_enu
+        return footprint_ned
     
     def get_horizontal_disp_edges(self, disparity_img, threshold=0.3):
     
@@ -305,8 +408,8 @@ class Stixels:
         #print(f"Disp edges: {runtime_ms:.2f} ms")
 
         grad_y = ut.filter_mask_by_boundary(grad_y, free_space_boundary, offset=10)
-        grad_y = ut.get_bottommost_line(grad_y, thickness=10)
-        upper_contours = ut.filter_mask_by_boundary(upper_contours, free_space_boundary, offset=15)
+        grad_y = ut.get_bottommost_line(grad_y, thickness=5)
+        upper_contours = ut.filter_mask_by_boundary(upper_contours, free_space_boundary, offset=30)
         upper_contours = ut.get_bottommost_line(upper_contours)
 
         #cv2.imshow("grad_y", grad_y.astype(np.uint8)*255)
@@ -322,6 +425,8 @@ class Stixels:
             self.num_stixels,
             self.stixel_width
         )
+
+        self.stixel_stereo_depths = free_space_boundary_depth.copy()
 
 
         # 4. Normalize, resize, show
@@ -349,7 +454,7 @@ class Stixels:
 
         overlay = np.zeros_like(image)
 
-        for n, (stixel_top, stixel_base) in enumerate(self.stixel_list):
+        for n, (stixel_top, stixel_base) in enumerate(self.height_base_list):
 
             if stixel_base > stixel_top and self.stixel_width > 0:
 
@@ -411,7 +516,7 @@ class Stixels:
             if np.isnan(z):
                 z = self.max_range
 
-            p2 = np.array([-b*z, z])
+            p2 = np.array([-a*z, z])
 
 
             associated_ray = association_list[n]
@@ -424,9 +529,9 @@ class Stixels:
             first = False
 
         first = True
-        for n, (x, y) in enumerate(points):
+        for n, (z, x) in enumerate(points):
             if points_validity[n]:
-                plt.scatter(x, y, color=colors[n], marker='o', s=20, label='Stixel Footprints' if first else "")
+                plt.scatter(x, z, color=colors[n], marker='o', s=20, label='Stixel Footprints' if first else "")
                 first = False
 
         
@@ -554,7 +659,8 @@ def create_SSM_numba(disparity_img, depth_img,
 
     H, W = disparity_img.shape
     SSM = np.zeros((H, num_stixels), dtype=np.float32)
-    free_space_boundary_depth = np.zeros((H, num_stixels), dtype=np.float32)
+    #free_space_boundary_depth = np.zeros((H, num_stixels), dtype=np.float32)
+    free_space_boundary_depth = np.zeros(num_stixels, dtype=np.float32)
 
     for n in prange(num_stixels):  # Parallel loop
         stixel_start = n * stixel_width
@@ -571,7 +677,7 @@ def create_SSM_numba(disparity_img, depth_img,
         v_start = max(0, v_f - 10)
         depth_window = depth_img[v_start:v_f+1, stixel_range]
         median_val = nanmedian_2d(depth_window)
-        free_space_boundary_depth[v_f, n] = median_val
+        free_space_boundary_depth[n] = median_val
 
         # Binary means
         gy_stixel    = grad_y[:, stixel_range]
@@ -767,7 +873,7 @@ def distance_transform_1d_numba(DP_col, penalty):
     return dt, argmin
 
 @njit
-def get_optimal_height_numba(SSM, depth_map, free_space_boundary, num_stixels, NZ=5, Cs=2):
+def get_optimal_height_numba(SSM, depth_map, free_space_boundary, num_stixels, NZ=5, Cs=3):
     cost_map = - SSM
     H, _ = cost_map.shape
     DP = np.full((H, num_stixels), np.inf, dtype=np.float32)
@@ -781,8 +887,8 @@ def get_optimal_height_numba(SSM, depth_map, free_space_boundary, num_stixels, N
         v_f  = int(free_space_boundary[u])
         v_f1 = int(free_space_boundary[u+1])
 
-        z_u  = depth_map[v_f,  u]
-        z_u1 = depth_map[v_f1, u+1]
+        z_u  = depth_map[u]
+        z_u1 = depth_map[u+1]
         relax_factor = max(0, 1 - abs(z_u - z_u1) / NZ)
         penalty = Cs * relax_factor
 

@@ -78,8 +78,8 @@ def calculate_iou(mask1, mask2):
 
 def distance_from_point_to_line(point, line):
     a, b, c = line
-    x, y = point
-    dist = np.abs(a*x +b*y + c) / np.sqrt(a**2 + b**2)
+    z, x = point
+    dist = np.abs(a*z +b*x + c) / np.sqrt(a**2 + b**2)
     return dist
 
 
@@ -96,8 +96,9 @@ def calculate_3d_points(X, Y, d, cam_params):
 
 
 def rotation_matrix(theta):
-    return np.array([[np.cos(theta), -np.sin(theta)],
-                     [np.sin(theta),  np.cos(theta)]])
+    # Rotation around down axis
+    return np.array([[np.cos(theta), np.sin(theta)],
+                     [- np.sin(theta),  np.cos(theta)]])
 
 def transform_matrix_2d(theta, t):
     c, s = np.cos(theta), np.sin(theta)

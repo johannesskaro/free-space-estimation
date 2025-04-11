@@ -62,7 +62,7 @@ svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 168907
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
 #ROSBAG_NAME = "scen6"
-#START_TIMESTAMP = 1689073008428931880 + 2000000000  # Starting to see tube
+#START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
 #ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
@@ -166,7 +166,7 @@ def main():
     P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
 
     #t_body_to_cam = np.array([-TRANS_FLOOR_TO_LIDAR[0], -TRANS_FLOOR_TO_LIDAR[1], TRANS_FLOOR_TO_LIDAR[2]])
-    t_body_to_cam = np.array([- TRANS_FLOOR_TO_LIDAR[1], - TRANS_FLOOR_TO_LIDAR[0]])
+    t_body_to_cam = np.array([- TRANS_FLOOR_TO_LIDAR[0], - TRANS_FLOOR_TO_LIDAR[1]])
 
     #rot_yaw_180 = Rot.from_euler('z', np.pi).as_matrix()
     #R_body_to_cam = rot_yaw_180 @ ROT_FLOOR_TO_LIDAR 
@@ -214,14 +214,13 @@ def main():
         xyz_intensity = lidar_data[lidar_idx][2]
         xyz_c = lidar_data[lidar_idx][3]
 
-        prev_pose = curr_pose
+        prev_pose = curr_pose.copy()
         pos_ned = gnss_data_ned[gnss_idx][1]
         ori_quat = gnss_data_ned[gnss_idx][2]
         curr_pose = np.concatenate([pos_ned, ori_quat])
-
         
         # Processing
-        
+        start_time = time.time()
         # FusedWSS
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
@@ -244,12 +243,11 @@ def main():
         
         prev_stixel_footprints = stixels.get_prev_stixel_footprint()
 
-        start_time = time.time()
-
         prev_stixel_footprints_curr_frame = stixels.transform_prev_stixels_into_curr_frame(prev_stixel_footprints, prev_pose=prev_pose, curr_pose=curr_pose)
 
         association_list = stixels.associate_prev_stixels(prev_stixel_footprints_curr_frame)
 
+        stixels.recursive_height_filter(association_list, alpha=0.7)
 
         end_time = time.time()
 
@@ -266,7 +264,7 @@ def main():
 
 
         #stixels.plot_stixel_footprints(stixel_footprints)
-        stixels.plot_projection_rays_and_associated_points(prev_stixel_footprints_curr_frame, stixels.prev_stixel_validity, association_list)
+        #stixels.plot_projection_rays_and_associated_points(prev_stixel_footprints_curr_frame, stixels.prev_stixel_validity, association_list)
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
         #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
 
