@@ -18,11 +18,12 @@ class YoloSeg:
             img, 
             device=device, 
             show=False,
-            retina_masks=False, 
+            retina_masks=True, 
             classes=[8], 
             iou=0.5, 
             verbose=False,
-            half=True
+            half=True,
+            conf=0.4
         )
 
         r = results[0].masks

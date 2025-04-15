@@ -1,10 +1,7 @@
 from rosbags.rosbag2 import Reader
-from rosbags.serde import deserialize_cdr
 from rosbags.typesys import Stores, get_typestore
 import cv2
 import numpy as np
-from scipy.spatial.transform import Rotation as Rot
-from shapely.geometry.polygon import Polygon
 import pyzed.sl as sl
 from stereo_svo import SVOCamera
 from transforms import *
@@ -15,9 +12,7 @@ from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
 from stixels import Stixels
-import warnings
-
-#warnings.filterwarnings('error', category=RuntimeWarning)
+from utilities_map import plot_gnss_iteration_video
 
 #Scen1 - Into tunnel
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_11-30-51_28170706_HD1080_FPS15.svo"
@@ -39,7 +34,7 @@ import warnings
 SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 #+ 16000000000
+START_TIMESTAMP = 1689070899731613030 #+ 15000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -154,6 +149,37 @@ def gen_ma2_gnss_ned():
     # pos is here relative to piren, which is NED
     return t_pos_ori
 
+
+
+
+
+
+save_video = True
+save_map_video = True
+
+src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
+FPS = 5.0
+
+if save_video:
+    fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
+    out = cv2.VideoWriter(
+        f"{src_dir}/results/video_recursive_filtering_v11.mp4",
+        fourcc,
+        FPS,
+        (width, height),
+    )
+
+if save_map_video:
+    fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
+    out_map = cv2.VideoWriter(
+        f"{src_dir}/results/video_BEV_v3.mp4",
+        fourcc,
+        FPS,
+        (height, height),
+    )
+
+
+
 def main():
 
     # Iniitalize
@@ -181,6 +207,7 @@ def main():
     rwps3d.set_camera_params(cam_params, P1)
 
     # Extracting data
+
     gen_svo = gen_svo_images()
     lidar_data = gen_ma2_lidar_points()
     gnss_data_ned = gen_ma2_gnss_ned()
@@ -220,40 +247,46 @@ def main():
         curr_pose = np.concatenate([pos_ned, ori_quat])
         
         # Processing
+
         start_time = time.time()
+
         # FusedWSS
+
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
+        #contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask_2(left_img, rwps_mask_3d)
         contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
         
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
+
+        # Boat detection
+
+        boat_mask = yolo.get_boat_mask(left_img)
         
         # Temporal Filtering
         
         water_mask_filtered = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
-        
-        boat_mask = yolo.get_boat_mask(left_img)
         water_mask_filtered = yolo.refine_water_mask(boat_mask, water_mask_filtered)
 
         # Stixel pipeline
         
         xyz_proj, xyz_c = filter_point_cloud_by_image(xyz_proj, xyz_c, height, width)
-        
-        stixel_footprints, filtered_lidar_points = stixels.create_stixels(water_mask_filtered, disparity_img, depth_img, upper_contour_mask, xyz_proj, xyz_c, boat_mask)
-        
-        prev_stixel_footprints = stixels.get_prev_stixel_footprint()
 
-        prev_stixel_footprints_curr_frame = stixels.transform_prev_stixels_into_curr_frame(prev_stixel_footprints, prev_pose=prev_pose, curr_pose=curr_pose)
-
-        association_list = stixels.associate_prev_stixels(prev_stixel_footprints_curr_frame)
-
-        stixels.recursive_height_filter(association_list, alpha=0.7)
-
-        end_time = time.time()
+        stixel_footprints = stixels.run_stixel_pipeline(
+                water_mask=water_mask_filtered, 
+                disparity_img=disparity_img, 
+                depth_img=depth_img, 
+                upper_contours=upper_contour_mask, 
+                xyz_proj=xyz_proj, 
+                xyz_c=xyz_c,
+                pose_prev=prev_pose,
+                pose_curr=curr_pose, 
+                boat_mask=boat_mask
+        )
 
 
         # Display
-        
+        end_time = time.time()
         runtime_ms = (end_time - start_time) * 1000
         print(f"Total time: {runtime_ms:.2f} ms")
 
@@ -264,17 +297,31 @@ def main():
 
 
         #stixels.plot_stixel_footprints(stixel_footprints)
-        #stixels.plot_projection_rays_and_associated_points(prev_stixel_footprints_curr_frame, stixels.prev_stixel_validity, association_list)
+        #stixels.plot_projection_rays_and_associated_points()
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
-        #lidar_stixel_img = merge_lidar_onto_image(stixel_img, filtered_lidar_points)
+
+        filtered_lidar_points, filtered_3d_points = stixels.get_filterd_lidar_points(xyz_proj, xyz_c)
+        lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=filtered_lidar_points, lidar_3d_points=filtered_3d_points)
 
         #cv2.imshow("left", left_img)
         cv2.imshow("Filtered_mask", water_img_filtered)
-        #cv2.imshow("Lidar stixel image", lidar_stixel_img)
-        cv2.imshow("stixel image", stixel_img)
+        cv2.imshow("Lidar stixel image", lidar_stixel_img)
+        #cv2.imshow("stixel image", stixel_img)
         #cv2.imshow("Contour mask", upper_contour_mask)
         cv2.waitKey(1)
         #time.sleep(0.1)
+
+
+        if save_video:
+            out.write(lidar_stixel_img)
+        if save_map_video:
+            map_image = plot_gnss_iteration_video(curr_pose, stixel_footprints, stixels.dynamic_stixel_list, stixels.stixel_has_measurement)
+            out_map.write(map_image)
+    
+    if save_video:
+        out.release()
+    if save_map_video:
+        out_map.release()
         
 
 

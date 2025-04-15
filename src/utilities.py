@@ -289,6 +289,7 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
         if 0 <= x < width and 0 <= y < height:
             value_norm = depths_normalized[i]
             rgba = colormap(value_norm)  # returns RGBA, take RGB
+            #rgba = colormap(1.0 - value_norm)
             color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
             cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
 
