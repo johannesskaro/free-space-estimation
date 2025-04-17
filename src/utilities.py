@@ -80,7 +80,44 @@ def distance_from_point_to_line(point, line):
     a, b, c = line
     z, x = point
     dist = np.abs(a*z +b*x + c) / np.sqrt(a**2 + b**2)
+    #r = np.linalg.norm(point)
+    r = np.hypot(z, x)
+    scaled_dist = dist / max(r, 1e-10)
+    return scaled_dist
+
+def distance_from_point_to_line_2(point, line):
+    a, b, c = line
+    z, x = point
+    dist = np.abs(a*z +b*x + c) / np.sqrt(a**2 + b**2)
     return dist
+
+def angular_error(point, line, min_r=1e-3):
+
+    a, b, c = line
+    z, x = point
+
+    # 1) form the 2D vector from the origin to the point
+    p = np.array([z, x], dtype=float)
+    r = np.linalg.norm(p)
+    if r < min_r:
+        return np.inf
+
+    # 2) get a direction vector along the line by rotating the normal (a,b)
+    #    any vector perpendicular to the normal is along the line:
+    v = np.array([-b, a], dtype=float)
+
+    # 3) normalize both
+    p_hat = p / r
+    v_hat = v / np.linalg.norm(v)
+
+    # 4) compute the cosine of the angle and then acos
+    cos_theta = np.dot(p_hat, v_hat)
+    # if you want the acute angle to the infinite line (no ray‐sign), do:
+    cos_theta = np.abs(cos_theta)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+
+    theta = np.arccos(cos_theta)
+    return theta
 
 
 

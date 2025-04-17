@@ -50,14 +50,13 @@ def plot_line_strings(ax, line_strings, origin=[0, 0]):
     return ax
 
 
-def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, has_measurements_list):
+def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, stixel_validity, using_prop_depth):
 
     origin = ORIGIN
     line_strings = LINE_STRINGS
 
-    stixel_points = stixel_points[has_measurements_list]
     stixel_points = stixel_points[:, [1, 0]]
-    dynamic_list = dynamic_list[has_measurements_list]
+    stixel_points_poly = stixel_points[stixel_validity]
 
     gnss_pos = curr_pose[:2]
     gnss_ori = curr_pose[3:]
@@ -90,8 +89,11 @@ def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, has_measur
 
 
 
-    stixel_points_global_poly = transform_stixel_points(stixel_points, boat_position, yaw)
-    stixel_points_global = stixel_points_global_poly[:len(dynamic_list)]
+    stixel_points_global_poly = transform_stixel_points(stixel_points_poly, boat_position, yaw)
+
+    #stixel_points_global = stixel_points_global_poly[:len(dynamic_list)]
+    stixel_points_global = transform_stixel_points(stixel_points, boat_position, yaw)
+    stixel_points_global = stixel_points_global[:len(dynamic_list)]
 
     xs, ys = zip(*stixel_points_global_poly)
     ax.fill(xs, ys, color='cyan', alpha=0.3, label="Free Space")
@@ -99,18 +101,26 @@ def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, has_measur
 
     plt.scatter(boat_position[0], boat_position[1], s=50, color='green', label="Ego Vessel")
 
-    for (x, y), pmo in zip(stixel_points_global, dynamic_list):
-        if pmo:
-            plt.scatter(x, y, color='red', marker='o', s=50, label="Boat" if 'Boat' not in plt.gca().get_legend_handles_labels()[1] else "")
-        else:
-            plt.scatter(x, y, color='blue', marker='o', s=50, label="Static" if 'Static' not in plt.gca().get_legend_handles_labels()[1] else "")
+    for n, (x, y) in enumerate(stixel_points_global):
+        if stixel_validity[n]:
+
+            if dynamic_list[n]:
+                plt.scatter(x, y, color='red', marker='o', s=50, label="Boat" if 'Boat' not in plt.gca().get_legend_handles_labels()[1] else "")
+            elif using_prop_depth[n] == True:
+                plt.scatter(x, y, color='yellow', marker='o', s=50, label="Propagated" if 'Propagated' not in plt.gca().get_legend_handles_labels()[1] else "")
+            else:
+                plt.scatter(x, y, color='blue', marker='o', s=50, label="Static" if 'Static' not in plt.gca().get_legend_handles_labels()[1] else "")
+
     
     ax.set_xlabel("East [m]", fontsize=16)
     ax.set_ylabel("North [m]", fontsize=16)
     #ax.set_title("Free Space Estimation")
     ax.add_artist(ab)
+
     ax.invert_yaxis()
     ax.invert_xaxis()
+    ax.set_xlim(-265, -335)
+    ax.set_ylim(-490, -565)
     #plt.grid(True)
     #plt.show(block=False)
     #plt.pause(1)  # Display the plot for a short period

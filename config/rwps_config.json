@@ -1,6 +1,6 @@
 {
     "RANSAC": {
-        "distance_threshold": 0.1,
+        "distance_threshold": 0.05,
         "ransac_n": 3,
         "num_iterations": 10,
         "probability": 0.999999

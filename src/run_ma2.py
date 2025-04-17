@@ -34,7 +34,7 @@ from utilities_map import plot_gnss_iteration_video
 SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 #+ 15000000000
+START_TIMESTAMP = 1689070899731613030 #+ 10000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -154,7 +154,7 @@ def gen_ma2_gnss_ned():
 
 
 
-save_video = True
+save_video = False
 save_map_video = True
 
 src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
@@ -172,7 +172,7 @@ if save_video:
 if save_map_video:
     fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
     out_map = cv2.VideoWriter(
-        f"{src_dir}/results/video_BEV_v3.mp4",
+        f"{src_dir}/results/video_BEV_fused_prop_association_1.mp4",
         fourcc,
         FPS,
         (height, height),
@@ -296,26 +296,30 @@ def main():
         stixel_img = stixels.overlay_stixels_on_image(left_img)
 
 
-        #stixels.plot_stixel_footprints(stixel_footprints)
-        #stixels.plot_projection_rays_and_associated_points()
-        #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
-
         filtered_lidar_points, filtered_3d_points = stixels.get_filterd_lidar_points(xyz_proj, xyz_c)
-        lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=filtered_lidar_points, lidar_3d_points=filtered_3d_points)
+        lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=xyz_proj, lidar_3d_points=xyz_c)
 
         #cv2.imshow("left", left_img)
+        #norm_depth = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        #colored_depth = cv2.applyColorMap(norm_depth, cv2.COLORMAP_RAINBOW)
+        #cv2.imshow("depth", colored_depth)
         cv2.imshow("Filtered_mask", water_img_filtered)
         cv2.imshow("Lidar stixel image", lidar_stixel_img)
         #cv2.imshow("stixel image", stixel_img)
         #cv2.imshow("Contour mask", upper_contour_mask)
+
+
+        #stixels.plot_stixel_footprints(stixel_footprints)
+        #stixels.plot_projection_rays_and_associated_points()
+        #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
+
         cv2.waitKey(1)
-        #time.sleep(0.1)
 
 
         if save_video:
             out.write(lidar_stixel_img)
         if save_map_video:
-            map_image = plot_gnss_iteration_video(curr_pose, stixel_footprints, stixels.dynamic_stixel_list, stixels.stixel_has_measurement)
+            map_image = plot_gnss_iteration_video(curr_pose, stixel_footprints, stixels.dynamic_stixel_list.copy(), stixels.stixel_validity.copy(), stixels.using_prop_depth.copy())
             out_map.write(map_image)
     
     if save_video:
