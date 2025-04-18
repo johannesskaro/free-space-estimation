@@ -29,7 +29,9 @@ class Stixels:
         self.stixel_fused_depths_var = np.full(self.num_stixels, np.inf ,dtype=float)
         self.stixel_footprints = np.full((num_stixels, 2), 0, dtype=float)
         self.stixel_has_measurement = np.full(num_stixels, False, dtype=bool)
+        self.stixel_validity = np.full(self.num_stixels, False, dtype=bool)
         self.dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
+        self.using_prop_depth = np.full(self.num_stixels, False, dtype=bool)
 
         self.prev_height_base_list = np.zeros((self.num_stixels, 2), dtype=int)
         self.prev_stixel_lidar_depths = np.zeros(self.num_stixels, dtype=float)
@@ -38,9 +40,12 @@ class Stixels:
         self.prev_stixel_footprints = np.full((num_stixels, 2), 0, dtype=float)
         self.prev_stixel_footprints_curr_frame = np.full((num_stixels, 2), 0, dtype=float)
         self.prev_stixel_has_measurement = np.full(num_stixels, False, dtype=bool)
+        self.prev_stixel_validity = np.full(self.num_stixels, False, dtype=bool)
         self.prev_dynamic_stixel_list = np.full(num_stixels, False, dtype=bool)
+        self.prev_using_prop_depth = np.full(self.num_stixels, False, dtype=bool)
 
-        self.association_list = np.full(num_stixels, -1, dtype=int)
+        self.association_depth = np.full(num_stixels, -1, dtype=int)
+        self.association_height = np.full(num_stixels, -1, dtype=int)
 
         self.R_body_to_cam = np.array(R_body_to_cam)
         self.t_body_to_cam = np.array(t_body_to_cam)
@@ -53,6 +58,9 @@ class Stixels:
         self.prev_stixel_lidar_depths = self.stixel_lidar_depths.copy()
         self.prev_stixel_fused_depths_var = self.stixel_fused_depths_var.copy()
         self.prev_stixel_has_measurement = self.stixel_has_measurement.copy()
+        self.prev_using_prop_depth = self.using_prop_depth.copy()
+
+        delta_heading = ut.get_delta_heading(pose_prev, pose_curr)
 
         self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
 
@@ -60,11 +68,11 @@ class Stixels:
 
         self.transform_prev_stixels_into_curr_frame(pose_prev, pose_curr)
 
-        self.associate_prev_stixels()
+        self.associate_prev_stixels(delta_heading)
 
-        #self.recursive_height_filter()
+        self.recursive_height_filter()
 
-        self.recursive_depth_filter(pose_prev, pose_curr)
+        self.recursive_depth_filter(delta_heading)
 
         self.get_stixel_BEV_footprints()
 
@@ -105,243 +113,16 @@ class Stixels:
 
         return projection_rays
 
-    
-    def associate_prev_stixels(self, dist_threshold=1, z_diff_threshold=2):
-        N = self.num_stixels
-        association_list = np.full(N, -1, dtype=int)
-        pts = self.prev_stixel_footprints_curr_frame.copy()
 
-        z_lidar = self.stixel_lidar_depths.copy()
-
-        for n, ray in enumerate(self.projection_rays):
-
-            #if self.dynamic_stixel_list[n] == True:
-            #    continue
-
-            if pts.size == 0:
-                continue
-
-            idx = n
-            idx_minus = n-1 if n-1 >= 0 else n
-            idx_plus = n+1 if n+1 < N else n
-
-            d_n_minus_1 = ut.distance_from_point_to_line(pts[idx_minus], ray)
-            d_n = ut.distance_from_point_to_line(pts[idx], ray)
-            d_n_plus_1 = ut.distance_from_point_to_line(pts[idx_plus], ray)
-
-            print("d_n_minus_1: ", d_n_minus_1)
-            print("d_n: ", d_n)
-            print("d_n_plus_1: ", d_n_plus_1)
-            print(" ----- ")
-
-            iterating = True
-
-            if d_n <= d_n_minus_1 and d_n <= d_n_plus_1:
-                if d_n < dist_threshold:
-                    #if self.prev_dynamic_stixel_list[idx] == False and self.prev_stixel_has_measurement[idx] == True:
-                    if self.prev_stixel_has_measurement[idx] == True:
-                        #z_diff = np.abs(z_stereo_prev[idx] - z_stereo[n])
-                        #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                        #if z_diff < z_diff_threshold:
-                            association_list[n] = idx
-
-            elif d_n_minus_1 < d_n and d_n_minus_1 < d_n_plus_1:
-                i = 2
-                d_n_minus_i_prev = d_n_minus_1
-                while iterating:
-                    #print("minus", n)
-                    idx = n - i
-                    if idx < 0:
-                        if d_n_minus_i_prev < dist_threshold:
-                            #if self.prev_dynamic_stixel_list[0] == False and self.prev_stixel_has_measurement[0] == True:
-                            if self.prev_stixel_has_measurement[0] == True:
-                                #z_diff = np.abs(z_stereo_prev[0] - z_stereo[n])
-                                #z_diff = np.abs(pts[0, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:            
-                                    association_list[n] = 0
-                        iterating = False
-                        break
-
-                    d_n_minus_i = ut.distance_from_point_to_line(pts[idx], ray)
-                    if d_n_minus_i < d_n_minus_i_prev:
-                        d_n_minus_i_prev = d_n_minus_i
-                        i += 1
-                        continue
-                    else:
-                        if d_n_minus_i_prev < dist_threshold:
-                            #if self.prev_dynamic_stixel_list[idx + 1] == False and self.prev_stixel_has_measurement[idx + 1] == True:
-                            if self.prev_stixel_has_measurement[idx + 1] == True:
-                                #z_diff = np.abs(z_stereo_prev[idx + 1] - z_stereo[n])
-                                #z_diff = np.abs(pts[idx + 1, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = idx + 1
-                        iterating = False
-                        break
-
-            elif d_n_plus_1 < d_n and d_n_plus_1 < d_n_minus_1:
-                i = 2
-                d_n_plus_i_prev = d_n_plus_1
-                while iterating:
-                    #print("plus", n)
-                    idx = n + i
-                    if idx >= N:
-                        if d_n_plus_i_prev < dist_threshold:
-                            #if self.prev_dynamic_stixel_list[N - 1] == False and self.prev_stixel_has_measurement[N - 1] == True:
-                            if self.prev_stixel_has_measurement[N - 1] == True:
-                                #z_diff = np.abs(z_stereo_prev[N - 1] - z_stereo[n])
-                                #z_diff = np.abs(pts[N - 1, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = N - 1
-                        iterating = False
-                        break
-
-                    d_n_plus_i = ut.distance_from_point_to_line(pts[idx], ray)
-                    if d_n_plus_i < d_n_plus_i_prev:
-                        d_n_plus_i_prev = d_n_plus_i
-                        i += 1
-                        continue
-                    else:
-                        if d_n_plus_i_prev < dist_threshold:
-                            #if self.prev_dynamic_stixel_list[idx - 1] == False and self.prev_stixel_has_measurement[idx - 1] == True:
-                            if self.prev_stixel_has_measurement[idx - 1] == True:
-                                #z_diff = np.abs(z_stereo_prev[idx - 1] - z_stereo[n])
-                                #z_diff = np.abs(pts[idx - 1, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = idx - 1
-                        iterating = False
-                        break
-            else:
-                print("Error associating previous Stixels for index", n)
-
-        #print(association_list)
-
-        self.association_list = association_list
-
-    def associate_prev_stixels_2(self, dist_threshold=0.01, z_diff_threshold=1):
-        N = self.num_stixels
-        association_list = np.full(N, -1, dtype=int)
-
-        #relevant_prev_points_list = self.prev_stixel_has_measurement & (~self.prev_dynamic_stixel_list)
-        relevant_prev_points_list = self.prev_stixel_has_measurement.copy()
-
-        #pts = self.prev_stixel_footprints_curr_frame[relevant_prev_points_list]
-        pts = self.prev_stixel_footprints_curr_frame.copy()
-        indices = np.where(relevant_prev_points_list)[0]
-
-        z_lidar = self.stixel_lidar_depths.copy()
-
-        for n, ray in enumerate(self.projection_rays):
-
-            if self.dynamic_stixel_list[n] == True:
-                continue
-
-            if pts.size == 0 or indices.size == 0:
-                continue
-
-            pos = np.abs(indices - n).argmin()
-            pos_minus = np.clip(pos - 1, 0, len(indices) - 1)
-            pos_plus = np.clip(pos + 1, 0, len(indices) - 1)
-
-            idx = indices[pos]
-            idx_minus = np.clip(indices[pos_minus], 0, N - 1)
-            idx_plus = np.clip(indices[pos_plus], 0, N - 1)
-
-            d_n_minus_1 = ut.distance_from_point_to_line(pts[idx_minus], ray)
-            d_n = ut.distance_from_point_to_line(pts[idx], ray)
-            d_n_plus_1 = ut.distance_from_point_to_line(pts[idx_plus], ray)
-
-            #print("d_n_minus_1: ", d_n_minus_1)
-            #print("d_n: ", d_n)
-            #print("d_n_plus_1: ", d_n_plus_1)
-            #print(" ----- ")
-
-            iterating = True
-
-            if d_n <= d_n_minus_1 and d_n <= d_n_plus_1:
-                if d_n < dist_threshold:
-                    if self.prev_dynamic_stixel_list[idx] == False:
-                        #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                        #if z_diff < z_diff_threshold or np.isnan(z_lidar[n]):
-                        #if z_diff < z_diff_threshold:
-                            association_list[n] = idx
-
-            elif d_n_minus_1 < d_n and d_n_minus_1 < d_n_plus_1:
-                i = 2
-                d_n_minus_i_prev = d_n_minus_1
-                while iterating:
-                    #print("minus", n)
-                    pos_minus = pos - i
-                    if pos_minus < 0:
-                        idx = indices[0]
-                        if d_n_minus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[idx] == False:
-                                #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:            
-                                    association_list[n] = idx
-                        iterating = False
-                        break
-                    else:
-                        idx = indices[pos_minus]
-
-                    d_n_minus_i = ut.distance_from_point_to_line(pts[idx], ray)
-                    if d_n_minus_i < d_n_minus_i_prev:
-                        d_n_minus_i_prev = d_n_minus_i
-                        i += 1
-                        continue
-                    else:
-                        if d_n_minus_i_prev < dist_threshold:
-                            idx = indices[pos_minus + 1]
-                            if self.prev_dynamic_stixel_list[idx] == False:
-                                #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = idx
-                        iterating = False
-                        break
-
-            elif d_n_plus_1 < d_n and d_n_plus_1 < d_n_minus_1:
-                i = 2
-                d_n_plus_i_prev = d_n_plus_1
-                while iterating:
-                    #print("plus", n)
-                    pos_plus = pos + i
-                    if pos_plus >= len(indices):
-                        idx = indices[-1]
-                        if d_n_plus_i_prev < dist_threshold:
-                            if self.prev_dynamic_stixel_list[idx] == False:
-                                #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = idx
-                        iterating = False
-                        break
-                    else:
-                        idx = indices[pos_plus]
-
-                    d_n_plus_i = ut.distance_from_point_to_line(pts[idx], ray)
-                    if d_n_plus_i < d_n_plus_i_prev:
-                        d_n_plus_i_prev = d_n_plus_i
-                        i += 1
-                        continue
-                    else:
-                        if d_n_plus_i_prev < dist_threshold:
-                            idx = indices[pos_plus - 1]
-                            if self.prev_dynamic_stixel_list[idx] == False:
-                                #z_diff = np.abs(pts[idx, 0] - z_lidar[n])
-                                #if z_diff < z_diff_threshold:
-                                    association_list[n] = idx
-                        iterating = False
-                        break
-            else:
-                print("Error associating previous Stixels for index", n)
-
-        #print(association_list)
-
-        self.association_list = association_list
-
-
-    def associate_prev_stixels_3(self, ang_thres_deg=0.25):
+    def associate_prev_stixels(self, delta_heading, ang_thres_deg=1, z_diff_thres=1):
         ang_thres = np.deg2rad(ang_thres_deg)
         N = self.num_stixels
-        association_list = np.full(N, -1, dtype=int)
+        association_depth = np.full(N, -1, dtype=int)
+        association_heigth = np.full(N, -1, dtype=int)
+
+        cam_fov = 110
+        RAY_SPACING = cam_fov / N
+        DELTA_IDX = int(round(delta_heading) / RAY_SPACING)
 
         relevant_prev_points_list = self.prev_stixel_has_measurement.copy()
         pts = self.prev_stixel_footprints_curr_frame.copy()
@@ -357,7 +138,8 @@ class Stixels:
             if pts.size == 0 or indices.size == 0:
                 continue
 
-            pos = np.abs(indices - n).argmin()
+            idx_pred = n + DELTA_IDX
+            pos = np.abs(indices - idx_pred).argmin()
             pos_minus = np.clip(pos - 1, 0, len(indices) - 1)
             pos_plus = np.clip(pos + 1, 0, len(indices) - 1)
 
@@ -378,9 +160,11 @@ class Stixels:
 
             if d_n <= d_n_minus_1 and d_n <= d_n_plus_1:
                 if d_n < ang_thres:
-                    #if self.prev_dynamic_stixel_list[idx] == self.dynamic_stixel_list[n]:
-                    #if self.prev_dynamic_stixel_list[idx] == False:
-                            association_list[n] = idx
+                    association_depth[n] = idx
+                    if self.prev_dynamic_stixel_list[idx] == False or self.dynamic_stixel_list[n] == False:
+                        z_diff = np.abs(pts[idx, 0] - z_lidar[n])
+                        if z_diff < z_diff_thres:
+                            association_heigth[n] = idx
 
             elif d_n_minus_1 < d_n and d_n_minus_1 < d_n_plus_1:
                 i = 2
@@ -391,9 +175,12 @@ class Stixels:
                     if pos_minus < 0:
                         idx = indices[0]
                         if d_n_minus_i_prev < ang_thres:
-                            #if self.prev_dynamic_stixel_list[idx] == self.dynamic_stixel_list[n]:
-                            #if self.prev_dynamic_stixel_list[idx] == False:
-                                    association_list[n] = idx
+                            association_depth[n] = idx
+                            if self.prev_dynamic_stixel_list[idx] == False or self.dynamic_stixel_list[n] == False:
+                                z_diff = np.abs(pts[idx, 0] - z_lidar[n])
+                                if z_diff < z_diff_thres:
+                                    association_heigth[n] = idx
+                                    
                         iterating = False
                         break
                     else:
@@ -407,9 +194,11 @@ class Stixels:
                     else:
                         if d_n_minus_i_prev < ang_thres:
                             idx = indices[pos_minus + 1]
-                            #if self.prev_dynamic_stixel_list[idx] == self.dynamic_stixel_list[n]:
-                            #if self.prev_dynamic_stixel_list[idx] == False:
-                            association_list[n] = idx
+                            association_depth[n] = idx
+                            if self.prev_dynamic_stixel_list[idx] == False or self.dynamic_stixel_list[n] == False:
+                                z_diff = np.abs(pts[idx, 0] - z_lidar[n])
+                                if z_diff < z_diff_thres:
+                                    association_heigth[n] = idx
                         iterating = False
                         break
 
@@ -422,9 +211,11 @@ class Stixels:
                     if pos_plus >= len(indices):
                         idx = indices[-1]
                         if d_n_plus_i_prev < ang_thres:
-                            #if self.prev_dynamic_stixel_list[idx] == self.dynamic_stixel_list[n]:
-                            #if self.prev_dynamic_stixel_list[idx] == False:
-                                    association_list[n] = idx
+                            association_depth[n] = idx
+                            if self.prev_dynamic_stixel_list[idx] == False or self.dynamic_stixel_list[n] == False:
+                                z_diff = np.abs(pts[idx, 0] - z_lidar[n])
+                                if z_diff < z_diff_thres:
+                                    association_heigth[n] = idx
                         iterating = False
                         break
                     else:
@@ -438,9 +229,11 @@ class Stixels:
                     else:
                         if d_n_plus_i_prev < ang_thres:
                             idx = indices[pos_plus - 1]
-                            #if self.prev_dynamic_stixel_list[idx] == self.dynamic_stixel_list[n]:
-                            #if self.prev_dynamic_stixel_list[idx] == False:
-                            association_list[n] = idx
+                            association_depth[n] = idx
+                            if self.prev_dynamic_stixel_list[idx] == False or self.dynamic_stixel_list[n] == False:
+                                z_diff = np.abs(pts[idx, 0] - z_lidar[n])
+                                if z_diff < z_diff_thres:
+                                    association_heigth[n] = idx
                         iterating = False
                         break
             else:
@@ -448,15 +241,16 @@ class Stixels:
 
         #print(association_list)
 
-        self.association_list = association_list
+        self.association_depth = association_depth
+        self.association_height = association_heigth
 
     
 
     def recursive_height_filter(self, alpha=0.7):
 
         for n in range(self.num_stixels):
-            if self.association_list[n] != -1:
-                idx = self.association_list[n]
+            if self.association_height[n] != -1:
+                idx = self.association_height[n]
 
                 v_top_curr = self.height_base_list[n, 0]
                 v_top_prev = self.prev_height_base_list[idx, 0]
@@ -468,18 +262,10 @@ class Stixels:
 
                 self.height_base_list[n, 0] = v_top_lp
 
-    def recursive_depth_filter(self, pose_prev, pose_curr):
+    def recursive_depth_filter(self, delta_heading):
 
         self.using_prop_depth = np.full(self.num_stixels, False, dtype=bool)
         self.stixel_validity = np.full(self.num_stixels, False, dtype=bool)
-
-        ori_prev = pose_prev[3:]
-        ori_curr = pose_curr[3:]
-
-        heading_prev = R.from_quat(ori_prev).as_euler('xyz', degrees=False)[2] + np.pi
-        heading_curr = R.from_quat(ori_curr).as_euler('xyz', degrees=False)[2] + np.pi
-
-        delta_heading = heading_curr - heading_prev
 
         C_pose = np.array([[0.01, 0, 0], 
                            [0, 0.01, 0],
@@ -488,6 +274,8 @@ class Stixels:
         fx = self.cam_params["fx"]
         b = self.cam_params["b"]
 
+        potential_prop_list = []
+
         for n in range(self.num_stixels):
             z_lidar = self.stixel_lidar_depths[n]
             z_stereo = self.stixel_stereo_depths[n]
@@ -495,9 +283,11 @@ class Stixels:
             if np.isnan(z_lidar) or np.isinf(z_lidar):
                 z_lidar = 0
                 var_lidar = np.inf
+                has_lidar = False
             else:
                 sigma_lidar = 0.01
                 var_lidar = sigma_lidar**2
+                has_lidar = True
 
             if np.isnan(z_stereo) or np.isinf(z_stereo):
                 z_stereo = 0
@@ -509,8 +299,11 @@ class Stixels:
             
             # Prediction step
 
-            if self.association_list[n] != -1:
-                idx = self.association_list[n]
+            if self.association_depth[n] != -1:
+                idx = self.association_depth[n]
+
+                if not has_lidar and self.prev_using_prop_depth[idx]:
+                    potential_prop_list.extend([n, idx])
 
                 var_fused_prev = self.prev_stixel_fused_depths_var[idx]
 
@@ -553,6 +346,7 @@ class Stixels:
 
             if z_fused <= 0:
                 self.stixel_validity[n] = False
+                self.stixel_has_measurement[n] = False
                 z_fused = self.max_range
 
             else:
@@ -773,10 +567,10 @@ class Stixels:
 
 
         # 4. Normalize, resize, show
-        SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
-        H, W = disparity_img.shape
-        SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
-        cv2.imshow("SSM", SSM_resized.astype(np.uint8))
+        #SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
+        #H, W = disparity_img.shape
+        #SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
+        #cv2.imshow("SSM", SSM_resized.astype(np.uint8))
 
         return SSM, free_space_boundary_depth
     
@@ -889,9 +683,8 @@ class Stixels:
         plt.pause(1)  # Display the plot for a short period
         plt.close()
 
-    def plot_projection_rays_and_associated_points(self):
+    def plot_projection_rays_and_associated_points(self, association_list):
         points = self.prev_stixel_footprints_curr_frame.copy()
-        association_list = self.association_list.copy()
 
         plt.figure(figsize=(8,8))
 

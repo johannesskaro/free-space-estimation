@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from numba import njit, prange
 from shapely.geometry import Polygon, Point
+from scipy.spatial.transform import Rotation as R
 
 
 def blend_image_with_mask(img, mask, color=[0, 0, 255], alpha1=1, alpha2=1):
@@ -62,6 +63,16 @@ def rotate_point(x, y, image_width, image_height, roll_rad, initial_roll_rad=0):
     y_rotated += image_height / 2
 
     return round(x_rotated), round(y_rotated)
+
+def get_delta_heading(pose_prev, pose_curr):
+        ori_prev = pose_prev[3:]
+        ori_curr = pose_curr[3:]
+
+        heading_prev = R.from_quat(ori_prev).as_euler('xyz', degrees=False)[2] + np.pi
+        heading_curr = R.from_quat(ori_curr).as_euler('xyz', degrees=False)[2] + np.pi
+
+        delta_heading = heading_curr - heading_prev
+        return delta_heading
 
 
 def calculate_iou(mask1, mask2):

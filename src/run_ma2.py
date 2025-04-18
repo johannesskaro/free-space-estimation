@@ -155,7 +155,7 @@ def gen_ma2_gnss_ned():
 
 
 save_video = False
-save_map_video = True
+save_map_video = False
 
 src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
 FPS = 5.0
@@ -172,7 +172,7 @@ if save_video:
 if save_map_video:
     fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
     out_map = cv2.VideoWriter(
-        f"{src_dir}/results/video_BEV_fused_prop_association_1.mp4",
+        f"{src_dir}/results/video_BEV_fused_prop_association_1_v2.mp4",
         fourcc,
         FPS,
         (height, height),
@@ -310,7 +310,8 @@ def main():
 
 
         #stixels.plot_stixel_footprints(stixel_footprints)
-        #stixels.plot_projection_rays_and_associated_points()
+        stixels.plot_projection_rays_and_associated_points(stixels.association_depth.copy())
+        stixels.plot_projection_rays_and_associated_points(stixels.association_height.copy())
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
 
         cv2.waitKey(1)
