@@ -89,10 +89,10 @@ def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, stixel_val
 
 
 
-    stixel_points_global_poly = transform_stixel_points(stixel_points_poly, boat_position, yaw)
+    stixel_points_global_poly = transform_stixel_points_global(stixel_points_poly, boat_position, yaw)
 
     #stixel_points_global = stixel_points_global_poly[:len(dynamic_list)]
-    stixel_points_global = transform_stixel_points(stixel_points, boat_position, yaw)
+    stixel_points_global = transform_stixel_points_global(stixel_points, boat_position, yaw)
     stixel_points_global = stixel_points_global[:len(dynamic_list)]
 
     xs, ys = zip(*stixel_points_global_poly)
@@ -104,10 +104,10 @@ def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, stixel_val
     for n, (x, y) in enumerate(stixel_points_global):
         if stixel_validity[n]:
 
-            if dynamic_list[n]:
-                plt.scatter(x, y, color='red', marker='o', s=50, label="Boat" if 'Boat' not in plt.gca().get_legend_handles_labels()[1] else "")
-            elif using_prop_depth[n] == True:
+            if using_prop_depth[n]:
                 plt.scatter(x, y, color='yellow', marker='o', s=50, label="Propagated" if 'Propagated' not in plt.gca().get_legend_handles_labels()[1] else "")
+            elif dynamic_list[n]:
+                plt.scatter(x, y, color='red', marker='o', s=50, label="Boat" if 'Boat' not in plt.gca().get_legend_handles_labels()[1] else "")
             else:
                 plt.scatter(x, y, color='blue', marker='o', s=50, label="Static" if 'Static' not in plt.gca().get_legend_handles_labels()[1] else "")
 
@@ -138,14 +138,93 @@ def plot_gnss_iteration_video(curr_pose, stixel_points, dynamic_list, stixel_val
     return img_bgr
 
 
+def plot_gnss_iteration_video_local(curr_pose, stixel_points, dynamic_list, stixel_validity, using_prop_depth):
 
-def transform_stixel_points(stixel_points, boat_position, heading):
+
+    stixel_points = stixel_points[:, [1, 0]]
+    stixel_points_poly = stixel_points[stixel_validity]
+
+    gnss_pos = curr_pose[:2]
+    gnss_ori = curr_pose[3:]
+
+    #fig = plt.figure(figsize=(8, 8))
+
+    width, height = 1080, 1080
+    dpi = 100
+    fig = plt.figure(figsize=(width / dpi, height / dpi), dpi=dpi)
+    ax = fig.add_subplot(1,1,1)
+
+
+    r = R.from_quat(gnss_ori)
+    euler_angles = r.as_euler('xyz', degrees=False)
+    yaw = euler_angles[2]
+    cam_position = [0, 0]
+    boat_position = [cam_position[0] + TRANS_FLOOR_TO_LIDAR[1], cam_position[1] + TRANS_FLOOR_TO_LIDAR[0]]
+
+    boat_img = plt.imread("files/ferry.png")
+    rotation_angle = math.degrees(0)
+    rotated_boat_img = rotate(boat_img, angle=rotation_angle, reshape=True)
+    rotated_boat_img = np.clip(rotated_boat_img, 0, 1)
+    img_box = OffsetImage(rotated_boat_img, zoom=0.08)  #zoom=0.08
+    ab = AnnotationBbox(img_box, boat_position, frameon=False, box_alignment=(0.5, 0.5))
+    ab.set_zorder(-10)
+
+
+
+    stixel_points_poly = np.vstack((stixel_points_poly, cam_position))
+    stixel_points_poly = np.vstack((stixel_points_poly, stixel_points_poly[0])) # closing the the polygon
+
+    xs, ys = zip(*stixel_points_poly)
+    ax.fill(xs, ys, color='cyan', alpha=0.3, label="Free Space")
+    ax.plot(xs, ys, color='cyan', zorder=-10)
+
+    plt.scatter(boat_position[0], boat_position[1], s=50, color='green', label="Ego Vessel")
+
+    for n, (x, y) in enumerate(stixel_points):
+        if stixel_validity[n]:
+            
+            if using_prop_depth[n]:
+                plt.scatter(x, y, color='yellow', marker='o', s=50, label="Propagated" if 'Propagated' not in plt.gca().get_legend_handles_labels()[1] else "")
+            elif dynamic_list[n]:
+                plt.scatter(x, y, color='red', marker='o', s=50, label="Boat" if 'Boat' not in plt.gca().get_legend_handles_labels()[1] else "")
+            else:
+                plt.scatter(x, y, color='blue', marker='o', s=50, label="Static" if 'Static' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    
+    ax.set_xlabel("East [m]", fontsize=16)
+    ax.set_ylabel("North [m]", fontsize=16)
+    #ax.set_title("Free Space Estimation")
+    ax.add_artist(ab)
+
+    #ax.set_xlim(-35, 35)
+    #ax.set_ylim(-10, 65)
+    ax.set_xlim(-12, 12)
+    ax.set_ylim(-5, 15)
+    #plt.grid(True)
+    #plt.show(block=False)
+    #plt.pause(1)  # Display the plot for a short period
+    #plt.close()
+
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    plt.legend(fontsize=14)
+
+    fig.canvas.draw()
+    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    plt.close(fig)
+    return img_bgr
+
+
+
+def transform_stixel_points_global(stixel_points, boat_position, heading):
     offset_y = TRANS_FLOOR_TO_LIDAR[0]
     offset_x = TRANS_FLOOR_TO_LIDAR[1]
 
     transformed_points = []
 
-    heading_offset = 0 # math.radians(1.5)
+    heading_offset = 0 #np.deg2rad(3) # math.radians(1.5)
     corrected_heading = - heading + math.pi + heading_offset
     cos_theta = math.cos(corrected_heading)
     sin_theta = math.sin(corrected_heading)

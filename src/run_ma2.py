@@ -12,7 +12,7 @@ from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
 from stixels import Stixels
-from utilities_map import plot_gnss_iteration_video
+from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_local
 
 #Scen1 - Into tunnel
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_11-30-51_28170706_HD1080_FPS15.svo"
@@ -31,14 +31,14 @@ from utilities_map import plot_gnss_iteration_video
 
 
 #Scen4_2 - Docking w. boats
-SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
+#SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
-ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 #+ 10000000000
+#ROSBAG_NAME = "scen4_2"
+#START_TIMESTAMP = 1689070899731613030 #+ 10000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
-ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
-svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 1689070867898886257, 1689070870444290257, 1689070872386914257]) 
+#ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
+#svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 1689070867898886257, 1689070870444290257, 1689070872386914257]) 
 
 
 #Scen5 - Docking with tube
@@ -54,14 +54,14 @@ svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 168907
 
 
 #Scen6 - Docking with tube further away
-#SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
+SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
-#ROSBAG_NAME = "scen6"
-#START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
+ROSBAG_NAME = "scen6"
+START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
-#ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
-#svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
+ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
+svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
 
 
 diffs_s = (ma2_clap_timestamps - svo_clap_timestamps) / (10 ** 9)
@@ -172,7 +172,7 @@ if save_video:
 if save_map_video:
     fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
     out_map = cv2.VideoWriter(
-        f"{src_dir}/results/video_BEV_fused_prop_association_1_v2.mp4",
+        f"{src_dir}/results/{ROSBAG_NAME}_video_BEV_fused_one2one_refined_.25_deg_local_v2.mp4",
         fourcc,
         FPS,
         (height, height),
@@ -253,8 +253,8 @@ def main():
         # FusedWSS
 
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
-        #contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask_2(left_img, rwps_mask_3d)
-        contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
+        contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask_2(left_img, rwps_mask_3d)
+        #contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
         
         if not rwps_succeded:
             water_mask = get_water_mask_from_contour_mask(contour_mask)
@@ -310,8 +310,8 @@ def main():
 
 
         #stixels.plot_stixel_footprints(stixel_footprints)
-        stixels.plot_projection_rays_and_associated_points(stixels.association_depth.copy())
-        stixels.plot_projection_rays_and_associated_points(stixels.association_height.copy())
+        #stixels.plot_projection_rays_and_associated_points(stixels.association_height.copy())
+        #stixels.plot_projection_rays_and_associated_points(stixels.association_depth.copy())
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
 
         cv2.waitKey(1)
@@ -320,7 +320,7 @@ def main():
         if save_video:
             out.write(lidar_stixel_img)
         if save_map_video:
-            map_image = plot_gnss_iteration_video(curr_pose, stixel_footprints, stixels.dynamic_stixel_list.copy(), stixels.stixel_validity.copy(), stixels.using_prop_depth.copy())
+            map_image = plot_gnss_iteration_video_local(curr_pose, stixel_footprints, stixels.dynamic_stixel_list.copy(), stixels.stixel_validity.copy(), stixels.using_prop_depth.copy())
             out_map.write(map_image)
     
     if save_video:
