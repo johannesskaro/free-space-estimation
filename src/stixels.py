@@ -49,13 +49,16 @@ class Stixels:
         self.association_depth = np.full(num_stixels, -1, dtype=int)
         self.association_height = np.full(num_stixels, -1, dtype=int)
         self.prop_set = set()
+        self.prev_img_gray = None 
 
         self.R_body_to_cam = np.array(R_body_to_cam)
         self.t_body_to_cam = np.array(t_body_to_cam)
 
+        
+
         self.projection_rays = self.get_projection_rays()
 
-    def run_stixel_pipeline(self, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, boat_mask=None):
+    def run_stixel_pipeline(self, left_img, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, boat_mask=None):
 
         self.prev_stixel_footprints = self.stixel_footprints.copy()
         self.prev_stixel_lidar_depths = self.stixel_lidar_depths.copy()
@@ -67,6 +70,8 @@ class Stixels:
         delta_heading = ut.get_delta_heading(pose_prev, pose_curr)
 
         self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
+
+        self.refine_dynamic_list_with_optical_flow(left_img, pose_prev, pose_curr)
 
         self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
 
@@ -337,7 +342,7 @@ class Stixels:
             #print("----------")
 
 
-    def depth_continuity_gate(self, z_jump_thres: float = 1):
+    def depth_continuity_gate(self, z_jump_thres: float = 5):
 
         N = self.num_stixels
         valid_indices = np.where(self.stixel_validity)[0]
@@ -367,9 +372,110 @@ class Stixels:
         right_ok = (next_idx[valid_indices] < 0) | \
                 (np.abs(depths[valid_indices] - depths[next_idx[valid_indices]]) <= z_jump_thres)
 
-        cont[valid_indices] = left_ok & right_ok
+        cont[valid_indices] = left_ok | right_ok
 
-        self.stixel_validity = self.stixel_validity.copy() & cont
+        self.stixel_validity &= cont
+
+    def refine_dynamic_list_with_optical_flow(
+            self,
+            frame_bgr: np.ndarray,
+            pose_prev,
+            pose_curr,
+            flow_thr_px: float = 10
+        ):
+
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+
+        N = self.num_stixels
+        dynamic_mask = np.zeros(N, dtype=bool)
+
+        if self.prev_img_gray is None:
+            self.prev_img_gray = gray
+            return 
+
+        flow = cv2.calcOpticalFlowFarneback(
+            self.prev_img_gray, gray,
+            None,
+            pyr_scale=0.5, levels=3,
+            winsize=21, iterations=3,
+            poly_n=5, poly_sigma=1.2, flags=0)
+
+        u = flow[..., 0]                     # horizontal component (px)
+        v = flow[..., 1]                    # vertical component (px)
+
+        fx = self.cam_params['fx']          
+        fy = self.cam_params['fy']          
+        cx = self.cam_params['cx']          
+        cy = self.cam_params['cy']    
+
+        euler_prev = R.from_quat(pose_prev[3:]).as_euler('xyz', degrees=False)
+        euler_curr = R.from_quat(pose_curr[3:]).as_euler('xyz', degrees=False)
+
+        delta_roll = euler_curr[0] - euler_prev[0]
+        delta_pitch = euler_curr[1] - euler_prev[1]
+        delta_yaw = euler_curr[2] - euler_prev[2]
+
+        for n, stixel in enumerate(self.height_base_list):
+            u0 = n * self.stixel_width
+            u1 = (n + 1) * self.stixel_width
+            v0, v1 = stixel[0], stixel[1]
+
+            u_c = (u0 + u1) // 2
+            v_c = (v0 + v1) // 2
+
+            u_ego = - fx * delta_yaw - (u_c - cx) * delta_roll
+            v_ego = fy * delta_roll - (v_c - cy) * delta_yaw + fy * delta_pitch
+            
+            u_med = np.median(u[v0:v1, u0:u1])
+            v_med = np.median(v[v0:v1, u0:u1])
+
+            flow_residual = np.hypot(u_med - u_ego,   v_med - v_ego)
+            #flow_residual = np.hypot(u_med,   v_med) 
+
+            print("flow_residual: ", flow_residual)
+            if flow_residual > flow_thr_px:
+                dynamic_mask[n] = True
+
+
+        self.dynamic_stixel_list = self.dynamic_stixel_list | dynamic_mask
+        self.prev_img_gray = gray
+
+        #return dynamic_mask
+    
+
+    def plot_flow(self, frame_bgr: np.ndarray, stride: int = 16):
+
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        if self.prev_img_gray is None:
+            print("No previous frame to compute flow; call process_frame first.")
+            self.prev_img_gray = gray
+            return
+
+        flow = cv2.calcOpticalFlowFarneback(
+            self.prev_img_gray, gray, None,
+            pyr_scale=0.5, levels=3,
+            winsize=21, iterations=3,
+            poly_n=5, poly_sigma=1.2, flags=0)
+        u = flow[..., 0]
+        v = flow[..., 1]
+
+        # Prepare sampling grid
+        h, w = gray.shape
+        ys, xs = np.mgrid[0:h:stride, 0:w:stride]
+
+        u_s = u[ys, xs]
+        v_s = v[ys, xs]
+
+        # Plot
+        image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        plt.figure(figsize=(10, 6))
+        plt.imshow(image_rgb)
+        plt.quiver(xs, ys, u_s, v_s, color='r', angles='xy', scale_units='xy', scale=1)
+        plt.title("Dense Optical Flow (Farneback)")
+        plt.axis('off')
+        plt.show()
+
+        self.prev_img_gray = gray
  
 
 
@@ -538,7 +644,7 @@ class Stixels:
         self.stixel_stereo_depths = free_space_boundary_depth.copy()
 
 
-        # 4. Normalize, resize, show
+        # Normalize, resize, show
         #SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
         #H, W = disparity_img.shape
         #SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
@@ -601,7 +707,7 @@ class Stixels:
             if stixel_base > stixel_top and self.stixel_width > 0:
 
                 stixel_depth = self.stixel_fused_depths[n]
-                if np.isnan(stixel_depth) or np.isinf(stixel_depth):
+                if not self.stixel_validity[n]:
                     stixel_depth = self.max_range
                 norm_depth = (stixel_depth - min_depth) / (max_depth - min_depth)
                 norm_depth = np.clip(norm_depth, 0, 1)
@@ -669,7 +775,7 @@ class Stixels:
         for n, ray in enumerate(self.projection_rays):
             a, b, c, = ray
             z = self.stixel_fused_depths[n]
-            if np.isnan(z):
+            if not self.stixel_validity[n]:
                 z = self.max_range
 
             p2 = np.array([-a*z, z])
