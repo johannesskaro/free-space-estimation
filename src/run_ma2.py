@@ -35,7 +35,7 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 #ROSBAG_NAME = "scen4_2"
-#START_TIMESTAMP = 1689070899731613030 + 10000000000
+#START_TIMESTAMP = 1689070899731613030 #+ 12000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 #ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -58,8 +58,8 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
 ROSBAG_NAME = "scen6"
-#START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
-START_TIMESTAMP = 1689073018428931880 # tube almost passed
+START_TIMESTAMP = 1689073008428931880 #+ 2000000000  # Starting to see tube
+#START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
 ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
 svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
@@ -152,7 +152,7 @@ def gen_ma2_gnss_ned():
 
 
 save_video = False
-save_map_video = False
+save_map_video = True
 
 src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
 FPS = 5.0
@@ -169,7 +169,7 @@ if save_video:
 if save_map_video:
     fourcc = cv2.VideoWriter_fourcc(*"MP4V")  # You can also use 'MP4V' for .mp4 format
     out_map = cv2.VideoWriter(
-        f"{src_dir}/results/{ROSBAG_NAME}_video_BEV_fused_depth_cont_gate_5m_v2.mp4",
+        f"{src_dir}/results/{ROSBAG_NAME}_video_BEV_retina_masks.mp4",
         fourcc,
         FPS,
         (height, height),
@@ -216,6 +216,8 @@ def main():
     curr_pose[3:] = [0, 0, 0, 1]  # Identity quaternion
 
     iterating = True
+    timestamp = 0
+    prev_timestamp = 0
 
     while iterating:
         try:
@@ -225,7 +227,9 @@ def main():
             print('Reached end of SVO file')
             break
 
+        prev_timestamp = timestamp
         timestamp, left_img, disparity_img, depth_img, = next_svo
+        dt = (timestamp - prev_timestamp) / (10 ** 9)
         left_img = np.ascontiguousarray(left_img, dtype=np.uint8)
         disparity_img  = np.ascontiguousarray(disparity_img,  dtype=np.float32)
         depth_img      = np.ascontiguousarray(depth_img,      dtype=np.float32)
@@ -279,12 +283,13 @@ def main():
                 xyz_proj=xyz_proj, 
                 xyz_c=xyz_c,
                 pose_prev=prev_pose,
-                pose_curr=curr_pose, 
-                boat_mask=None,
+                pose_curr=curr_pose,
+                dt=dt, 
+                boat_mask=boat_mask,
         )
 
         #optical_flow.plot_residual_flow(left_img, prev_pose, curr_pose)
-        optical_flow.plot_flow(left_img)
+        #optical_flow.plot_flow(left_img, dt)
 
 
         # Display
@@ -313,7 +318,7 @@ def main():
 
 
         #stixels.plot_stixel_footprints(stixel_footprints)
-        stixels.plot_projection_rays_and_associated_points(stixels.association_height.copy())
+        #stixels.plot_projection_rays_and_associated_points(stixels.association_height.copy())
         #stixels.plot_projection_rays_and_associated_points(stixels.association_depth.copy())
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
 
@@ -323,7 +328,7 @@ def main():
         if save_video:
             out.write(lidar_stixel_img)
         if save_map_video:
-            map_image = plot_gnss_iteration_video(curr_pose, stixel_footprints, stixels.dynamic_stixel_list.copy(), stixels.stixel_validity.copy(), stixels.using_prop_depth.copy())
+            map_image = plot_gnss_iteration_video_local(curr_pose, stixel_footprints, stixels.dynamic_stixel_list.copy(), stixels.stixel_validity.copy(), stixels.using_prop_depth.copy())
             out_map.write(map_image)
     
     if save_video:

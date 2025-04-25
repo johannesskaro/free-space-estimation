@@ -30,6 +30,14 @@ def corresponding_pixels(mask1: np.array, mask2: np.array) -> int:
 
     return corresponding_count
 
+def make_homog(x, y, yaw):
+    c, s = np.cos(yaw), np.sin(yaw)
+    return np.array([
+        [   c, s,   x],
+        [   -s, c,   y],
+        [   0,  0,   1],
+    ])
+
 
 def rotate_point(x, y, image_width, image_height, roll_rad, initial_roll_rad=0):
     """

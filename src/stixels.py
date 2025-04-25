@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import time
 from scipy.spatial.transform import Rotation as R
 import math
+from transforms import TRANS_FLOOR_TO_LIDAR
 
 
 class Stixels:
@@ -58,7 +59,7 @@ class Stixels:
 
         self.projection_rays = self.get_projection_rays()
 
-    def run_stixel_pipeline(self, left_img, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, boat_mask=None):
+    def run_stixel_pipeline(self, left_img, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, dt, boat_mask=None):
 
         self.prev_stixel_footprints = self.stixel_footprints.copy()
         self.prev_stixel_lidar_depths = self.stixel_lidar_depths.copy()
@@ -71,7 +72,7 @@ class Stixels:
 
         self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
 
-        self.refine_dynamic_list_with_optical_flow(left_img, pose_prev, pose_curr)
+        self.refine_dynamic_list_with_optical_flow(left_img, pose_prev, pose_curr, dt)
 
         self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
 
@@ -363,14 +364,24 @@ class Stixels:
 
 
         cont = np.zeros(N, dtype=bool)
-
         depths = self.stixel_fused_depths.copy()
-       
-        left_ok  = (prev_idx[valid_indices] < 0) | \
-                (np.abs(depths[valid_indices] - depths[prev_idx[valid_indices]]) <=z_jump_thres)
 
-        right_ok = (next_idx[valid_indices] < 0) | \
-                (np.abs(depths[valid_indices] - depths[next_idx[valid_indices]]) <= z_jump_thres)
+        left_ok = np.zeros_like(valid_indices, dtype=bool)  
+        right_ok = np.zeros_like(valid_indices, dtype=bool)
+
+        has_left = prev_idx[valid_indices] >= 0
+        has_right = next_idx[valid_indices] >= 0
+
+        left_ok[has_left] = np.abs(depths[valid_indices[has_left]] - depths[prev_idx[valid_indices[has_left]]]) <= z_jump_thres
+        right_ok[has_right] = np.abs(depths[valid_indices[has_right]] - depths[next_idx[valid_indices[has_right]]]) <= z_jump_thres
+
+        
+       
+        #left_ok  = (prev_idx[valid_indices] < 0) | \
+        #        (np.abs(depths[valid_indices] - depths[prev_idx[valid_indices]]) <=z_jump_thres)
+
+        #right_ok = (next_idx[valid_indices] < 0) | \
+         #       (np.abs(depths[valid_indices] - depths[next_idx[valid_indices]]) <= z_jump_thres)
 
         cont[valid_indices] = left_ok | right_ok
 
@@ -381,8 +392,14 @@ class Stixels:
             frame_bgr: np.ndarray,
             pose_prev,
             pose_curr,
-            flow_thr_px: float = 10
+            dt,
+            flow_thr_px_s: float = 50
         ):
+
+        if dt <= 0:
+            dt = 1
+
+        t_body_to_cam = np.array([-TRANS_FLOOR_TO_LIDAR[0], -TRANS_FLOOR_TO_LIDAR[1], TRANS_FLOOR_TO_LIDAR[2]])
 
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
@@ -400,20 +417,46 @@ class Stixels:
             winsize=21, iterations=3,
             poly_n=5, poly_sigma=1.2, flags=0)
 
-        u = flow[..., 0]                     # horizontal component (px)
-        v = flow[..., 1]                    # vertical component (px)
+        u = flow[..., 0] / dt                    # horizontal component (px)
+        v = flow[..., 1] / dt                   # vertical component (px)
 
         fx = self.cam_params['fx']          
         fy = self.cam_params['fy']          
         cx = self.cam_params['cx']          
-        cy = self.cam_params['cy']    
+        cy = self.cam_params['cy']  
 
         euler_prev = R.from_quat(pose_prev[3:]).as_euler('xyz', degrees=False)
         euler_curr = R.from_quat(pose_curr[3:]).as_euler('xyz', degrees=False)
 
-        delta_roll = euler_curr[0] - euler_prev[0]
-        delta_pitch = euler_curr[1] - euler_prev[1]
-        delta_yaw = euler_curr[2] - euler_prev[2]
+        euler_prev[2] += np.pi - np.deg2rad(2) # only for MA2
+        euler_curr[2] += np.pi - np.deg2rad(2) # only for MA2
+
+        #R_prev = ut.rotation_matrix(euler_prev[2])
+        #R_curr = ut.rotation_matrix(euler_curr[2])
+
+        R_prev = R.from_euler('xyz', euler_prev, degrees=False).as_matrix()
+        R_curr = R.from_euler('xyz', euler_curr, degrees=False).as_matrix()
+
+        #R_prev = R.from_quat(pose_prev[3:]).as_matrix()
+        #R_curr = R.from_quat(pose_curr[3:]).as_matrix()
+
+        pos_b_prev = pose_prev[0:3]
+        pos_b_curr = pose_curr[0:3]
+
+        p_c_prev = pos_b_prev + R_prev.dot(t_body_to_cam)
+        p_c_curr = pos_b_curr + R_curr.dot(t_body_to_cam)
+
+        delta_pc = p_c_curr - p_c_prev
+
+        V_cam = R_curr.T.dot(delta_pc) / dt
+        Vx = V_cam[1]
+        Vy = V_cam[2]
+        Vz = V_cam[0]
+
+        def wrap(a): return np.arctan2(np.sin(a), np.cos(a))
+        delta_roll = wrap(euler_curr[0] - euler_prev[0]) / dt
+        delta_pitch = wrap(euler_curr[1] - euler_prev[1]) / dt
+        delta_yaw = wrap(euler_curr[2] - euler_prev[2]) / dt
 
         for n, stixel in enumerate(self.height_base_list):
             u0 = n * self.stixel_width
@@ -423,17 +466,30 @@ class Stixels:
             u_c = (u0 + u1) // 2
             v_c = (v0 + v1) // 2
 
-            u_ego = - fx * delta_yaw - (u_c - cx) * delta_roll
-            v_ego = fy * delta_roll - (v_c - cy) * delta_yaw + fy * delta_pitch
+            u_rot = - fx * delta_yaw - (u_c - cx) * delta_roll
+            v_rot = fy * delta_roll - (v_c - cy) * delta_yaw + fy * delta_pitch
+
+            z = self.stixel_stereo_depths[n]
+            if np.isnan(z) or np.isinf(z) or z <= 0:
+                u_trans = 0
+                v_trans = 0
+            else:
+                u_trans = fx * ( Vx / z ) - (u_c - cx) * ( Vz / z)
+                v_trans = fy * ( Vy / z ) - (v_c - cy) * ( Vz / z)
+
+            u_ego = u_rot + u_trans
+            v_ego = v_rot + v_trans
             
             u_med = np.median(u[v0:v1, u0:u1])
             v_med = np.median(v[v0:v1, u0:u1])
 
-            flow_residual = np.hypot(u_med - u_ego,   v_med - v_ego)
-            #flow_residual = np.hypot(u_med,   v_med) 
-
-            print("flow_residual: ", flow_residual)
-            if flow_residual > flow_thr_px:
+            #flow_residual = np.hypot(u_med - u_ego, v_med - v_ego)
+            flow_residual = np.hypot(u_med,   v_med) 
+            #print("flow_residual: ", flow_residual)
+            #print("u_med: ", u_med)
+            #print("u_ego: ", u_ego)
+            #print("--")
+            if flow_residual > flow_thr_px_s:
                 dynamic_mask[n] = True
 
 
@@ -441,42 +497,6 @@ class Stixels:
         self.prev_img_gray = gray
 
         #return dynamic_mask
-    
-
-    def plot_flow(self, frame_bgr: np.ndarray, stride: int = 16):
-
-        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-        if self.prev_img_gray is None:
-            print("No previous frame to compute flow; call process_frame first.")
-            self.prev_img_gray = gray
-            return
-
-        flow = cv2.calcOpticalFlowFarneback(
-            self.prev_img_gray, gray, None,
-            pyr_scale=0.5, levels=3,
-            winsize=21, iterations=3,
-            poly_n=5, poly_sigma=1.2, flags=0)
-        u = flow[..., 0]
-        v = flow[..., 1]
-
-        # Prepare sampling grid
-        h, w = gray.shape
-        ys, xs = np.mgrid[0:h:stride, 0:w:stride]
-
-        u_s = u[ys, xs]
-        v_s = v[ys, xs]
-
-        # Plot
-        image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        plt.figure(figsize=(10, 6))
-        plt.imshow(image_rgb)
-        plt.quiver(xs, ys, u_s, v_s, color='r', angles='xy', scale_units='xy', scale=1)
-        plt.title("Dense Optical Flow (Farneback)")
-        plt.axis('off')
-        plt.show()
-
-        self.prev_img_gray = gray
- 
 
 
     def transform_prev_stixels_into_curr_frame(self, prev_pose, curr_pose):
@@ -498,17 +518,8 @@ class Stixels:
         yaw_prev = R.from_quat(prev_pose[3:]).as_euler('xyz', degrees=False)[2] + np.pi #- np.deg2rad(3)
         yaw_curr = R.from_quat(curr_pose[3:]).as_euler('xyz', degrees=False)[2] + np.pi #- np.deg2rad(3)
 
-        # 2) Build 3×3 homogeneous transforms for each camera in world coords
-        def make_homog(x, y, yaw):
-            c, s = np.cos(yaw), np.sin(yaw)
-            return np.array([
-                [   c, s,   x],
-                [   -s, c,   y],
-                [   0,  0,   1],
-            ])
-
-        T_prev = make_homog(x_prev, y_prev, yaw_prev)
-        T_curr = make_homog(x_curr, y_curr, yaw_curr)
+        T_prev = ut.make_homog(x_prev, y_prev, yaw_prev)
+        T_curr = ut.make_homog(x_curr, y_curr, yaw_curr)
 
         # 3) Compute relative transform from prev_cam to curr_cam:
         #    we want  T_rel so that  [p]₍curr₎ = T_rel @ [p]₍prev₎
@@ -544,6 +555,8 @@ class Stixels:
 
         if boat_mask is not None:
             self.dynamic_stixel_list = compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, self.stixel_width, self.num_stixels)
+        else:
+            self.dynamic_stixel_list = np.full(self.num_stixels, False, dtype=bool)
 
         return self.height_base_list
     
