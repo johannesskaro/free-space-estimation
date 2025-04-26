@@ -9,6 +9,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from numba import njit, prange
 from shapely.geometry import Polygon, Point
 from scipy.spatial.transform import Rotation as R
+import random
 
 
 def blend_image_with_mask(img, mask, color=[0, 0, 255], alpha1=1, alpha2=1):
@@ -245,6 +246,48 @@ def get_high_contrast_colors(n, cmap_name='jet'):
     indices = np.argsort((np.arange(n) * phi) % 1)
     
     return base_colors[indices]
+
+
+def plot_sam_masks_cv2(image, masks):
+    """
+    Plots all segmentation masks from a Segment Anything Model (SAM) in different bright colors using OpenCV.
+    Each mask is overlaid on the original image with transparency and outlined with a contour line.
+
+    :param image: Original image (H, W, 3) in NumPy format.
+    :param masks: Binary masks (N, H, W), where N is the number of detected objects.
+    """
+    # Ensure the image is in BGR format
+    if len(image.shape) == 2 or image.shape[-1] == 1:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    
+    overlay = image.copy()
+    num_masks = masks.shape[0]
+    # Generate bright colors (each channel between 150 and 255)
+    colors = [tuple(random.randint(50, 255) for _ in range(3)) for _ in range(num_masks)]
+    alpha = 0.8  # transparency factor for the mask fill
+
+    for i in range(num_masks):
+        mask = masks[i]
+        color = colors[i]
+        
+        # Create a colored overlay for the mask region
+        color_mask = np.zeros_like(image, dtype=np.uint8)
+        color_mask[mask == 1] = color
+        
+        # Blend the colored overlay with the original image
+        overlay[mask == 1] = cv2.addWeighted(overlay[mask == 1], 1 - alpha,
+                                             color_mask[mask == 1], alpha, 0)
+        
+        # Convert mask to uint8 format (values 0 or 255)
+        mask_uint8 = (mask.astype(np.uint8) * 255)
+        # Find contours on the binary mask
+        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Draw the contour line around the mask region
+        cv2.drawContours(overlay, contours, -1, color, 2)
+    
+    cv2.imshow("SAM Mask Visualization", overlay)
+
+    return overlay
 
 
 @njit(parallel=True)

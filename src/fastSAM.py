@@ -4,7 +4,7 @@ from ultralytics.models.fastsam import FastSAMPredictor
 import cv2
 import torch
 import torch.nn.functional as F
-from utilities import calculate_iou
+from utilities import calculate_iou, plot_sam_masks_cv2
 import time
 from numba import njit, prange
 
@@ -40,7 +40,7 @@ class FastSAMSeg:
         verbose = False
         half = True
         imgsz = 640
-        results = self.model(img, device=device, retina_masks=retina_masks, verbose=verbose, half=half)
+        results = self.model(img, device=device, retina_masks=retina_masks, verbose=verbose, half=half, show=False)
 
         return results[0]
 
@@ -245,8 +245,9 @@ class FastSAMSeg:
         else:
             return contour_mask_resized, upper_contour_mask_resized, None
         
-    def get_all_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=1000, iou_threshold=0.001) -> np.array:
+    def get_all_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=10000, iou_threshold=0.001) -> np.array:
 
+        #iou_threshold = 0.001
         H, W = img.shape[:2]
         contour_mask = np.zeros((H, W))
         #start_time = time.time( )
@@ -268,6 +269,8 @@ class FastSAMSeg:
         valid_indices = areas > min_area
         binary_masks = binary_masks[valid_indices]
         binary_masks = binary_masks.cpu().numpy()
+
+        plot_sam_masks_cv2(img, binary_masks)
         
         contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)
         upper_contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)

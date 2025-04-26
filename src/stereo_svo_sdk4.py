@@ -14,7 +14,7 @@ class SVOCamera:
         init_params.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS #sl.DEPTH_MODE.NEURAL
         init_params.depth_minimum_distance = 0
         init_params.depth_maximum_distance = 60 #100
-        init_params.camera_disable_self_calib = True
+        #init_params.camera_disable_self_calib = True
         self.cam =  sl.Camera()
         err = self.cam.open(init_params)
         if err != sl.ERROR_CODE.SUCCESS:

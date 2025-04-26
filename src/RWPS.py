@@ -118,7 +118,7 @@ class RWPS:
         pcd = o3d.geometry.PointCloud.create_from_depth_image(
             o3d.geometry.Image(masked_depth),
             intrinsics,
-            stride=10,
+            stride=1, #10
             project_valid_depth_only=True,
             depth_scale=1.0,
             depth_trunc=200.0

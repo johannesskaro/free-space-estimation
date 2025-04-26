@@ -48,6 +48,7 @@ class TemporalFiltering:
 
         return smoothed_water_mask
     
+    
     def compute_homography(self, R, t, n, d, K):
         K_inv = np.linalg.inv(K)
         Rt = R - (t @ n.T) / d
