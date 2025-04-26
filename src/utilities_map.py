@@ -7,7 +7,6 @@ from pyproj import Transformer
 from scipy.spatial.transform import Rotation as R
 import math
 import numpy as np
-import pymap3d
 from transforms import *
 import cv2
 

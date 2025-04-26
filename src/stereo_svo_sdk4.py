@@ -11,20 +11,20 @@ class SVOCamera:
         cam_input_type.set_from_svo_file(svo_file_path)
         init_params = sl.InitParameters(input_t=cam_input_type, svo_real_time_mode=False)
         init_params.coordinate_units = sl.UNIT.METER
-        init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE #sl.DEPTH_MODE.NEURAL
+        init_params.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS #sl.DEPTH_MODE.NEURAL
         init_params.depth_minimum_distance = 0
         init_params.depth_maximum_distance = 60 #100
+        init_params.camera_disable_self_calib = True
         self.cam =  sl.Camera()
         err = self.cam.open(init_params)
         if err != sl.ERROR_CODE.SUCCESS:
             raise RuntimeError(f"ZED camera open failed with error: {err}")
         #assert self.cam.open(init_params) == sl.ERROR_CODE.SUCCESS
 
-        self.fps = self.cam.get_camera_information().camera_fps
-        #self.cam.get_camera_information().camera_configuration.fps
+        self.cam.get_camera_information().camera_configuration.fps
 
         self.runtime = sl.RuntimeParameters()
-        self.runtime.sensing_mode = sl.SENSING_MODE.STANDARD
+        #self.runtime.sensing_mode = sl.SENSING_MODE.STANDARD
         #self.runtime.sensing_mode = sl.RuntimeParameters.enable_fill_mode
         self.left_image = sl.Mat()
         self.right_image = sl.Mat()
@@ -33,11 +33,14 @@ class SVOCamera:
         self.depth = sl.Mat()
 
         # Short baseline rectification
-        cam_resolution = self.cam.get_camera_information().camera_resolution
+        cam_resolution = self.cam.get_camera_information().camera_configuration.resolution
         self.image_shape = (cam_resolution.width, cam_resolution.height)
         left_K, left_D = self.get_left_parameters()
-        right_K, right_D, R, T = self.get_right_parameters()
-        R1, R2, self.left_P, self.right_P, self.Q, roi1, roi2 = cv2.stereoRectify(left_K, left_D, right_K, right_D, self.image_shape, R, T, alpha=0) # alpha = 0 is zoomed to only valid pixels
+        right_K, right_D = left_K.copy(), left_D.copy()
+        baseline = self.cam.get_camera_information().camera_configuration.calibration_parameters.get_camera_baseline()
+        self.R = np.eye(3)
+        self.T = np.array([-baseline, 0, 0])
+        R1, R2, self.left_P, self.right_P, self.Q, roi1, roi2 = cv2.stereoRectify(left_K, left_D, right_K, right_D, self.image_shape, self.R, self.T, alpha=0) # alpha = 0 is zoomed to only valid pixels
         self.map_left_x, self.map_left_y = cv2.initUndistortRectifyMap(left_K, left_D, R1, self.left_P, self.image_shape, cv2.CV_32FC1)
         self.map_right_x, self.map_right_y = cv2.initUndistortRectifyMap(right_K, right_D, R2, self.right_P, self.image_shape, cv2.CV_32FC1)
 
@@ -98,27 +101,14 @@ class SVOCamera:
             D = np.zeros((1,5), dtype=np.float32)
             K = self.left_P[:3,:3]
         else:
-            cp_all = self.get_calibration_parameters_(should_rectify_zed)
-            cp = cp_all.left_cam
+            cp = self.get_calibration_parameters_(should_rectify_zed)
             K, D = self.get_cam_K_D_(cp)
         return K, D
 
     def get_calibration_parameters_(self, should_rectify_zed=False):
-        if should_rectify_zed:
-            cp_all = self.cam.get_camera_information().calibration_parameters
-        else: 
-            cp_all = self.cam.get_camera_information().calibration_parameters_raw
-        return cp_all
+        cp_all = self.cam.get_camera_information().camera_configuration.calibration_parameters
+        return cp_all if should_rectify_zed else cp_all.left_cam
     
-    def get_right_parameters(self, should_rectify_zed=False, should_rectify_cv2=False):
-        cp_all = self.get_calibration_parameters_(should_rectify_zed)
-        cp = cp_all.right_cam
-        K, D = self.get_cam_K_D_(cp)
-        R, T = self.get_cam_R_T_(cp_all)
-        if should_rectify_cv2:
-            D = np.zeros((1,5), dtype=np.float32)
-            K = self.right_P[:3,:3]
-        return K, D, R, T
     
     def get_cam_K_D_(self, camera_parameters):
         cp = camera_parameters

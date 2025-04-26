@@ -658,10 +658,10 @@ class Stixels:
 
 
         # Normalize, resize, show
-        #SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
-        #H, W = disparity_img.shape
-        #SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
-        #cv2.imshow("SSM", SSM_resized.astype(np.uint8))
+        SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
+        H, W = disparity_img.shape
+        SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
+        cv2.imshow("SSM", SSM_resized.astype(np.uint8))
 
         return SSM, free_space_boundary_depth
     

@@ -3,7 +3,7 @@ from rosbags.typesys import Stores, get_typestore
 import cv2
 import numpy as np
 import pyzed.sl as sl
-from stereo_svo import SVOCamera
+from stereo_svo_sdk4 import SVOCamera
 from transforms import *
 from utilities import find_closest_timestamp, get_water_mask_from_contour_mask, blend_image_with_mask, merge_lidar_onto_image, filter_point_cloud_by_image
 import time
@@ -77,7 +77,8 @@ GNSS_TOPIC = "/senti_parser/SentiPose"
 stereo_cam = SVOCamera(SVO_FILE_PATH)
 stereo_cam.set_svo_position_timestamp(START_TIMESTAMP)
 K, D = stereo_cam.get_left_parameters()
-_, _, R, T = stereo_cam.get_right_parameters()
+R = stereo_cam.R
+T = stereo_cam.T
 focal_length = K[0,0]
 baseline = np.linalg.norm(T)
 height, width = 1080, 1920
@@ -152,7 +153,7 @@ def gen_ma2_gnss_ned():
 
 
 save_video = False
-save_map_video = True
+save_map_video = False
 
 src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
 FPS = 5.0
@@ -307,10 +308,10 @@ def main():
         lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=filtered_lidar_points, lidar_3d_points=filtered_3d_points)
         #lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=xyz_proj, lidar_3d_points=xyz_c)
 
-        #cv2.imshow("left", left_img)
-        #norm_depth = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        #colored_depth = cv2.applyColorMap(norm_depth, cv2.COLORMAP_RAINBOW)
-        #cv2.imshow("depth", colored_depth)
+        cv2.imshow("left", left_img)
+        norm_depth = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        colored_depth = cv2.applyColorMap(norm_depth, cv2.COLORMAP_RAINBOW)
+        cv2.imshow("depth", colored_depth)
         cv2.imshow("Filtered_mask", water_img_filtered)
         cv2.imshow("Lidar stixel image", lidar_stixel_img)
         #cv2.imshow("stixel image", stixel_img)
