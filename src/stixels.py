@@ -70,7 +70,26 @@ class Stixels:
 
         delta_heading = ut.get_delta_heading(pose_prev, pose_curr)
 
-        self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
+        top_boundary = self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
+
+        #H, W = disparity_img.shape
+        #mask = np.zeros((H, W), dtype=bool)
+        #rows = np.repeat(top_boundary, self.stixel_width)
+        #cols = np.arange(W)
+
+        #thickness = 10
+
+        #half_thickness = thickness // 2
+
+        # Draw from -half_thickness to +half_thickness
+        #for offset in range(-half_thickness, half_thickness + 1):
+        #    r = rows + offset
+         #   valid = r < H  # ensure we stay within image bounds
+         #   mask[r[valid], cols[valid]] = 1
+        #mask[rows, cols] = 1
+
+        #top_boundary_img = ut.blend_image_with_mask(left_img, mask, [0, 255, 255], 1, 1)
+        #cv2.imshow("Top boundary", top_boundary_img.astype(np.uint8))
 
         self.refine_dynamic_list_with_optical_flow(left_img, pose_prev, pose_curr, dt)
 
@@ -96,14 +115,17 @@ class Stixels:
     def create_stixels_in_image(self, water_mask, disparity_img, depth_img, upper_contours, boat_mask=None):
 
         free_space_boundary = get_free_space_boundary(water_mask)
-        #start_time = time.time()
         SSM, stereo_depth = self.create_segmentation_score_map(disparity_img, depth_img, free_space_boundary, upper_contours)
-        #end_time = time.time()
-        #runtime_ms = (end_time - start_time) * 1000
-        #print(f"SSM total: {runtime_ms:.2f} ms")
         
         top_boundary = get_optimal_height_numba(SSM, stereo_depth, free_space_boundary, self.num_stixels)
         self.get_stixel_height_base_list(free_space_boundary, top_boundary, boat_mask)
+
+        SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
+        H, W = disparity_img.shape
+        SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
+        cv2.imshow("SSM", SSM_resized.astype(np.uint8))
+
+        return top_boundary
 
     
     def get_prev_stixel_footprint(self):
@@ -311,25 +333,27 @@ class Stixels:
 
             
             if not has_lidar:
-                #self.stixel_has_measurement[n] = False
+                #self.stixel_validity[n] = False
+                self.stixel_has_measurement[n] = False
 
                 if z_prop > 0:
                     #print("using prop lidar depth")
                     self.using_prop_depth[n] = True
 
-            #else:
-                #self.stixel_has_measurement[n] = True
+            else:
+                #self.stixel_validity[n] = True
+                self.stixel_has_measurement[n] = True
                 #print(z_fused)
 
             # If all depths are invalid
             if z_fused <= 0:
                 self.stixel_validity[n] = False
-                self.stixel_has_measurement[n] = False
-                #z_fused = self.max_range
+                #self.stixel_has_measurement[n] = False
+                z_fused = self.max_range
 
             else:
                 self.stixel_validity[n] = True
-                self.stixel_has_measurement[n] = True
+                #self.stixel_has_measurement[n] = True
 
 
             self.stixel_fused_depths[n] = z_fused
@@ -617,7 +641,11 @@ class Stixels:
         #normalized_disparity = cv2.normalize(disparity_img, None, 0, 1, cv2.NORM_MINMAX)
 
         blurred_image = cv2.GaussianBlur(normalized_disparity, (3, 3), 0)
+        #cv2.imshow("blurred", (blurred_image*255).astype(np.uint8))
         grad_y = cv2.Sobel(blurred_image, cv2.CV_32F, 0, 1, ksize=5)
+        #grad_y_abs = cv2.convertScaleAbs(grad_y)
+        #grad_y_abs_norm = cv2.normalize(grad_y_abs, None, 0, 255, cv2.NORM_MINMAX)
+        #cv2.imshow("Sobel", grad_y_abs_norm.astype(np.uint8)*100)
         #grad_y = cv2.convertScaleAbs(grad_y)
         grad_y = (grad_y > threshold).astype(np.uint8)
         #_, grad_y = cv2.threshold(grad_y, threshold, 1, cv2.THRESH_BINARY)
@@ -628,19 +656,14 @@ class Stixels:
         H, W = disparity_img.shape
         self.prev_stixel_stereo_depths = self.stixel_stereo_depths.copy()
 
-        #start_time = time.time()
         grad_y = self.get_horizontal_disp_edges(disparity_img)
-
-        #end_time = time.time()
-        #runtime_ms = (end_time - start_time) * 1000
-        #print(f"Disp edges: {runtime_ms:.2f} ms")
-
         grad_y = ut.filter_mask_by_boundary(grad_y, free_space_boundary, offset=10)
         grad_y = ut.get_bottommost_line(grad_y, thickness=5)
+
+
         upper_contours = ut.filter_mask_by_boundary(upper_contours, free_space_boundary, offset=20)
         upper_contours = ut.get_bottommost_line(upper_contours)
 
-        #cv2.imshow("grad_y", grad_y.astype(np.uint8)*255)
         #cv2.imshow("upper contours", upper_contours*255)
         
         v_f_array = get_v_f_array(free_space_boundary, self.stixel_width, self.num_stixels, H)
@@ -655,13 +678,6 @@ class Stixels:
         )
 
         self.stixel_stereo_depths = free_space_boundary_depth.copy()
-
-
-        # Normalize, resize, show
-        SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
-        H, W = disparity_img.shape
-        SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
-        cv2.imshow("SSM", SSM_resized.astype(np.uint8))
 
         return SSM, free_space_boundary_depth
     
@@ -736,8 +752,8 @@ class Stixels:
                 cv2.rectangle(overlay, 
                         (n * self.stixel_width, stixel_top),  # Top-left corner
                         ((n + 1) * self.stixel_width, stixel_base),  # Bottom-right corner
-                        color,  # Color of the border (BGR)
-                        2)  # Thickness of the border
+                        [0, 0, 0], #color,  # Color of the border (BGR)
+                        1)  # Thickness of the border
 
         alpha = 1 # 0.8  # Weight of the original image
         beta = 0.8 #1  # Weight of the overlay
@@ -975,7 +991,7 @@ def create_SSM_numba(disparity_img, depth_img,
         zero_mask = rev_row_medians == 0.0
         grad_part, contour_part, fg_scores = compute_scores(zero_mask, grad_y_means, uc_means, stds, v_f_plus_1)
 
-        w1, w2, w3 = 100.0, 100.0, 150.0 #100.0, 100.0, 200.0
+        w1, w2, w3 = 100.0, 100.0, 200.0 #100.0, 100.0, 200.0
         scores = w1 * grad_part + w2 * fg_scores + w3 * contour_part
 
         # Flip back

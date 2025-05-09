@@ -13,6 +13,9 @@ import random
 
 
 def blend_image_with_mask(img, mask, color=[0, 0, 255], alpha1=1, alpha2=1):
+
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     # Convert binary mask to a colored mask (e.g., red)
     colored_mask = np.zeros_like(img)
     colored_mask[mask > 0] = color
@@ -318,13 +321,20 @@ def filter_mask_by_boundary(mask, boundary_indices, offset=30):
     return output
 
 
-def write_coordinates_to_file(filename, frame, coordinates):
+def write_coordinates_to_file(filename, frame, coordinates, validity=None, dynamic=None, depth_uncertainty=None):
 
     coordinates_list = [list(coord) for coord in coordinates]
+
+    validity_list = [int(v) for v in validity] if validity is not None else None
+    dynamic_list = [int(d) for d in dynamic] if dynamic is not None else None
+    depth_uncertainty_list = [float(d) for d in depth_uncertainty] if depth_uncertainty is not None else None
     
     data = {
         "frame": frame,
-        "points": coordinates_list
+        "points": coordinates_list,
+        "validity": validity_list,
+        "dynamic": dynamic_list,
+        "depth_uncertainty": depth_uncertainty_list
     }
     
     # Open the file in append mode; if it doesn't exist, it will be created
@@ -337,7 +347,7 @@ def find_closest_timestamp(timestamps, target_timestamp):
     return idx, timestamps[idx]
 
 
-def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensities=None, point_size=2, max_value=60, min_value=0):
+def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensities=None, point_size=2, max_value=60, min_value=0, alpha=1):
 
 
     if intensities is not None and len(intensities.shape) == 2:
@@ -390,6 +400,7 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
             rgba = colormap(value_norm)  # returns RGBA, take RGB
             #rgba = colormap(1.0 - value_norm)
             color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
+            #color = (0, 0, 255)  # Red color for the point
             cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
 
             #color = tuple(int(c * 255) for c in color[::-1])  # convert to BGR
@@ -397,8 +408,8 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
             #cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
 
     # Blend the original image and the lidar overlay
-    alpha = 1  # Weight of the original image
-    beta = 0.8   # Weight of the overlay
+    #alpha = 0.8 #1  # Weight of the original image
+    beta = 1 # 0.8   # Weight of the overlay
     gamma = 0.0  # Scalar added to each sum
     image_with_lidar = cv2.addWeighted(image_with_lidar, alpha, lidar_overlay, beta, gamma)
 

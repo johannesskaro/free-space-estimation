@@ -245,7 +245,7 @@ class FastSAMSeg:
         else:
             return contour_mask_resized, upper_contour_mask_resized, None
         
-    def get_all_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=10000, iou_threshold=0.001) -> np.array:
+    def get_all_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=3000, iou_threshold=0.001) -> np.array:
 
         #iou_threshold = 0.001
         H, W = img.shape[:2]
@@ -270,7 +270,7 @@ class FastSAMSeg:
         binary_masks = binary_masks[valid_indices]
         binary_masks = binary_masks.cpu().numpy()
 
-        plot_sam_masks_cv2(img, binary_masks)
+        #plot_sam_masks_cv2(img, binary_masks)
         
         contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)
         upper_contour_mask_intermediate = np.zeros((H_mask, W_mask), dtype=np.uint8)

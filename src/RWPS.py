@@ -118,15 +118,15 @@ class RWPS:
         pcd = o3d.geometry.PointCloud.create_from_depth_image(
             o3d.geometry.Image(masked_depth),
             intrinsics,
-            stride=1, #10
+            stride=10, #10
             project_valid_depth_only=True,
             depth_scale=1.0,
             depth_trunc=200.0
         )
+
         points_3d = np.asarray(pcd.points)
         
         #print("Points in PCD:", len(pcd.points))
-
 
         #coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
         #    size=1.0, origin=[0, 0, 0]
@@ -190,6 +190,152 @@ class RWPS:
         self.prev_unitnormal = unit_normal
         self.prev_mask = mask
         return mask.astype(np.uint8), plane_model, valid
+    
+    def plot_3d_pcd(self, left_img, depth_img, stride=1):
+        H_full, W_full = depth_img.shape
+
+        # Keep only bottom 2/3 of the image
+        start_row = H_full // 3
+        left_img_cropped = left_img[start_row:, :]
+        depth_img_cropped = depth_img[start_row:, :]
+
+        H, W = depth_img_cropped.shape
+
+        # Convert BGR to RGB
+        left_img_rgb = cv2.cvtColor(left_img_cropped, cv2.COLOR_BGR2RGB)
+
+        # Create Open3D images
+        img_o3d = o3d.geometry.Image(left_img_rgb)
+        depth_o3d = o3d.geometry.Image(depth_img_cropped.astype(np.float32))
+
+        # Adjust intrinsics based on cropping
+        fx = self.cam_params["fx"]
+        fy = self.cam_params["fy"]
+        cx = self.cam_params["cx"]
+        cy = self.cam_params["cy"] - start_row  # Shift principal point
+
+        intrinsics = o3d.camera.PinholeCameraIntrinsic(W, H, fx, fy, cx, cy)
+
+        # Create RGBD image
+        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+            img_o3d,
+            depth_o3d,
+            depth_scale=1.0,
+            depth_trunc=200.0,
+            convert_rgb_to_intensity=False
+        )
+
+        # Generate point cloud
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+            rgbd,
+            intrinsics,
+            project_valid_depth_only=True
+        )
+
+        # Optional: downsample point cloud
+        if stride > 1:
+            pcd = pcd.voxel_down_sample(voxel_size=stride * 0.01)
+
+        # Create a coordinate frame
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+
+        #plane_mesh, line_set = self.create_plane_mesh(
+        #    x_range=(-20, 20), y_range=(-2, 2), resolution=20
+        #)
+
+        plane_pcd = self.create_plane_pointcloud(
+            x_range=(-20, 20), y_range=(-1, 2), resolution=80
+        )
+
+        # Visualize
+        o3d.visualization.draw_geometries([pcd, plane_pcd, coord_frame])
+
+    def create_plane_pointcloud(self, x_range, y_range, resolution=10):
+        """
+        Create a point cloud of points lying on a plane model (a, b, c, d).
+        """
+
+        a, b, c, d = self.prev_planemodel
+
+        # Generate grid in X-Y
+        x = np.linspace(x_range[0], x_range[1], resolution)
+        y = np.linspace(y_range[0], y_range[1], resolution)
+        xx, yy = np.meshgrid(x, y)
+        xx = xx.reshape(-1)
+        yy = yy.reshape(-1)
+
+        # Calculate corresponding Z
+        if c == 0:
+            raise ValueError("Plane normal z-component is zero, cannot solve for z.")
+        zz = (-a * xx - b * yy - d) / c
+
+        # Stack into (N, 3) points
+        points = np.vstack((xx, yy, zz)).T
+
+        # Create PointCloud object
+        plane_pcd = o3d.geometry.PointCloud()
+        plane_pcd.points = o3d.utility.Vector3dVector(points)
+
+        # Color all points pink
+        pink_color = np.array([[1.0, 0.4, 0.7]] * points.shape[0])
+        plane_pcd.colors = o3d.utility.Vector3dVector(pink_color)
+
+        return plane_pcd
+
+    def create_plane_mesh(self, x_range, y_range, resolution=10):
+
+        a, b, c, d = self.prev_planemodel
+
+        # Generate grid in X-Y
+        x = np.linspace(x_range[0], x_range[1], resolution)
+        y = np.linspace(y_range[0], y_range[1], resolution)
+        xx, yy = np.meshgrid(x, y)
+        xx = xx.reshape(-1)
+        yy = yy.reshape(-1)
+
+        # Calculate corresponding Z
+        if c == 0:
+            raise ValueError("Plane normal z-component is zero, cannot solve for z.")
+        zz = (-a * xx - b * yy - d) / c
+
+        # Create vertices
+        vertices = np.vstack((xx, yy, zz)).T
+        vertices_o3d = o3d.utility.Vector3dVector(vertices)
+
+        # Create faces (triangles)
+        faces = []
+        for i in range(resolution - 1):
+            for j in range(resolution - 1):
+                idx0 = i * resolution + j
+                idx1 = idx0 + 1
+                idx2 = idx0 + resolution
+                idx3 = idx2 + 1
+                faces.append([idx0, idx2, idx1])
+                faces.append([idx1, idx2, idx3])
+
+        faces_o3d = o3d.utility.Vector3iVector(faces)
+
+        # Create mesh
+        plane_mesh = o3d.geometry.TriangleMesh(vertices_o3d, faces_o3d)
+        plane_mesh.compute_vertex_normals()
+
+        # Color the mesh pink
+        plane_mesh.paint_uniform_color([1.0, 0.4, 0.7])  # Pink RGB
+
+        # Create wireframe (lines between triangle edges)
+        lines = []
+        for face in faces:
+            lines.append([face[0], face[1]])
+            lines.append([face[1], face[2]])
+            lines.append([face[2], face[0]])
+
+        line_set = o3d.geometry.LineSet(
+            points=vertices_o3d,
+            lines=o3d.utility.Vector2iVector(lines),
+        )
+        line_set.paint_uniform_color([0.5, 0.2, 0.35])  # Black wireframe lines
+
+        return plane_mesh, line_set
     
     def get_segmentation_mask_from_plane_model(self, points_3d, plane_model):
 
@@ -329,8 +475,8 @@ class RWPS:
         horizon_cutoff = np.clip(horizon_cutoff, 0, H - 1)
 
         return p1, p2, horizon_cutoff
+        
 
-    
 
 def invalid_mask(p1, p2, shape):
     # Define the points

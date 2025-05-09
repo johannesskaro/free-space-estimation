@@ -24,7 +24,7 @@ import struct
 # Watertest 1
 SVO_FILE_PATH = r"C:\Users\johro\Documents\19-04-25\watertest1\watertest1_prt.svo2"
 ROSBAG_NAME = "watertest1/bag"
-START_TIMESTAMP = 1745066626514600000 + 50*10**9 
+START_TIMESTAMP = 1745066626514600000 + 70*10**9 
 
 # Watertest 2
 

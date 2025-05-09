@@ -11,7 +11,7 @@ class SVOCamera:
         cam_input_type.set_from_svo_file(svo_file_path)
         init_params = sl.InitParameters(input_t=cam_input_type, svo_real_time_mode=False)
         init_params.coordinate_units = sl.UNIT.METER
-        init_params.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS #sl.DEPTH_MODE.NEURAL
+        init_params.depth_mode = sl.DEPTH_MODE.NEURAL #sl.DEPTH_MODE.NEURAL
         init_params.depth_minimum_distance = 0
         init_params.depth_maximum_distance = 60 #100
         #init_params.camera_disable_self_calib = True
