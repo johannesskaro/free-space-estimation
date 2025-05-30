@@ -615,3 +615,33 @@ def associate_prev_stixels_3(self, ang_thres_deg=0.25):
                             self.association_depth[n] = -1
 
         #print(self.prop_set)
+
+
+
+
+
+def transform_stixel_points_local_2(stixel_points, H_WORLD_FROM_RIGHT_ZED_CURR, boat_pos_prev, boat_ori_prev):
+
+    H_WORLD_FROM_RIGHT_ZED_PREV = build_H_world_from_cam(boat_position, boat_ori, H_POINTS_RIGHT_ZED_FROM_FLOOR)
+
+    H_POINTS_RIGHT_ZED_FROM_FLOOR = H_POINTS_RIGHT_FROM_LEFT_ZED @ H_POINTS_LEFT_ZED_FROM_LEFT_CAM @ H_POINTS_CAM_FROM_FLOOR @ H_POINTS_FLOOR_FROM_LIDAR @ H_POINTS_LIDAR_FROM_FLOOR
+
+    H_WORLD_FROM_FLOOR_CURR           = np.eye(4)
+    H_WORLD_FROM_FLOOR_CURR[:3, :3]   = R.from_quat(boat_ori_curr).as_matrix()
+    H_WORLD_FROM_FLOOR_CURR[:3, 3]    = boat_pos_curr
+
+    H_WORLD_FROM_FLOOR_PREV           = np.eye(4)
+    H_WORLD_FROM_FLOOR_PREV[:3, :3]   = R.from_quat(boat_ori_prev).as_matrix()
+    H_WORLD_FROM_FLOOR_PREV[:3, 3]    = boat_pos_prev
+
+    # camera → world  =  boat → world ⋅ (boat ← camera)
+    H_WORLD_FROM_RIGHT_ZED_CURR = H_WORLD_FROM_FLOOR_CURR @ np.linalg.inv(H_POINTS_RIGHT_ZED_FROM_FLOOR)
+    H_WORLD_FROM_RIGHT_ZED_PREV = H_WORLD_FROM_FLOOR_PREV @ np.linalg.inv(H_POINTS_RIGHT_ZED_FROM_FLOOR)
+
+    H_CURR_FROM_PREV = np.linalg.inv(H_WORLD_FROM_RIGHT_ZED_PREV) @ H_WORLD_FROM_RIGHT_ZED_CURR
+
+    points_cam = np.array([[x, 0, z, 1] for z, x in stixel_points])
+    points_local = (H_CURR_FROM_PREV @ points_cam.T).T[:, [0, 2]]
+
+
+    return points_local

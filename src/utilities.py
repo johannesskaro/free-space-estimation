@@ -186,6 +186,28 @@ def invert_transformation(H):
     )
     return H_transformed
 
+def deproject(u, v, Z, cam_params):
+    fx = cam_params["fx"]
+    fy = cam_params["fy"]
+    cx = cam_params["cx"]
+    cy = cam_params["cy"]
+
+    X = Z * (u - cx) / fx
+    Y = Z * (v - cy) / fy
+    return np.stack([X, Y, Z], axis=-1)
+
+
+def project(XYZ, cam_params):
+    fx = cam_params["fx"]
+    fy = cam_params["fy"]
+    cx = cam_params["cx"]
+    cy = cam_params["cy"]
+
+    X, Y, Z = XYZ[..., 0], XYZ[..., 1], XYZ[..., 2]
+    u = fx * X / Z + cx
+    v = fy * Y / Z + cy
+    return u, v
+
 
 def visualize_lidar_points(points):
     """
@@ -321,7 +343,7 @@ def filter_mask_by_boundary(mask, boundary_indices, offset=30):
     return output
 
 
-def write_coordinates_to_file(filename, frame, coordinates, validity=None, dynamic=None, depth_uncertainty=None):
+def write_coordinates_to_file(filename, frame, coordinates, validity=None, dynamic=None, depth_uncertainty=None, curr_pose=None):
 
     coordinates_list = [list(coord) for coord in coordinates]
 
@@ -329,12 +351,14 @@ def write_coordinates_to_file(filename, frame, coordinates, validity=None, dynam
     dynamic_list = [int(d) for d in dynamic] if dynamic is not None else None
     depth_uncertainty_list = [float(d) for d in depth_uncertainty] if depth_uncertainty is not None else None
     
+    
     data = {
         "frame": frame,
         "points": coordinates_list,
         "validity": validity_list,
         "dynamic": dynamic_list,
-        "depth_uncertainty": depth_uncertainty_list
+        "depth_uncertainty": depth_uncertainty_list,
+        "pose": curr_pose.tolist() if curr_pose is not None else None
     }
     
     # Open the file in append mode; if it doesn't exist, it will be created
@@ -399,9 +423,14 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
             value_norm = depths_normalized[i]
             rgba = colormap(value_norm)  # returns RGBA, take RGB
             #rgba = colormap(1.0 - value_norm)
-            color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
-            #color = (0, 0, 255)  # Red color for the point
-            cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
+            #color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
+            color = (0, 0, 255)  # Red color for the point
+            #cv2.circle(lidar_overlay, (x, y), point_size + 2, (255, 255, 255), -1)
+            #cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
+
+            cv2.circle(image_with_lidar, (x, y), point_size + 2, (255, 255, 255), -1)
+            # Draw the actual filled color dot
+            cv2.circle(image_with_lidar, (x, y), point_size, color, -1)
 
             #color = tuple(int(c * 255) for c in color[::-1])  # convert to BGR
             #color = (0, 0, 255)

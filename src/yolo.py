@@ -22,8 +22,8 @@ class YoloSeg:
             classes=[8], 
             iou=0.5, 
             verbose=False,
-            half=True,
-            conf=0.4
+            half=True
+            #conf=0.4
         )
 
         r = results[0].masks
