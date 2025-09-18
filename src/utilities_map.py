@@ -29,7 +29,8 @@ def get_line_strings_from_file(file_path):
     line_strings = [LineString(coords) for coords in data]
     return line_strings
 
-LINE_STRINGS = get_line_strings_from_file("files/linestrings.json")
+#LINE_STRINGS = get_line_strings_from_file("files/linestrings.json")
+LINE_STRINGS = None
 
 def plot_line_strings(ax, line_strings, origin=[0, 0]):
     origin_x = origin[0]

@@ -1,7 +1,7 @@
 from rosbags.rosbag2 import Reader
 from rosbags.typesys import Stores, get_typestore
 import cv2
-import numpy as np
+import numpy as npq
 import pyzed.sl as sl
 from stereo_svo_sdk4 import SVOCamera
 from transforms import *
@@ -55,8 +55,9 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 
 
 #Scen6 - Docking with tube further away
-SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
+#SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
+SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 ROSBAG_NAME = "scen6"
 START_TIMESTAMP = 1689073008428931880   #+ 4000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
@@ -68,7 +69,8 @@ svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 168907
 diffs_s = (ma2_clap_timestamps - svo_clap_timestamps) / (10 ** 9)
 GNSS_MINUS_ZED_TIME_NS = np.mean(ma2_clap_timestamps - svo_clap_timestamps)
 
-ROSBAG_FOLDER = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\bags"
+#ROSBAG_FOLDER = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\bags"
+ROSBAG_FOLDER = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/bags"
 ROSBAG_PATH = f"{ROSBAG_FOLDER}/{ROSBAG_NAME}"
 LIDAR_TOPIC = "/lidar_aft/points"
 GNSS_TOPIC = "/senti_parser/SentiPose"
@@ -156,7 +158,8 @@ save_video = False
 save_map_video = False
 save_data = False
 
-src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
+#src_dir = r"C:\Users\johro\Documents\BB-Perception\free-space-estimation"
+src_dir = "projects/free-space-estimation"
 FPS = 5.0
 
 if save_video:
@@ -370,8 +373,8 @@ def main():
 
         #optical_flow.plot_flow(left_img, dt=0)
 
-        stixel_points_list.append(stixel_footprints)
-        plot_previous_gnss_iterations_local(gnss_pos_list, gnss_ori_list, stixel_points_list)
+        #stixel_points_list.append(stixel_footprints)
+        #plot_previous_gnss_iterations_local(gnss_pos_list, gnss_ori_list, stixel_points_list)
 
         cv2.waitKey(1)
 
