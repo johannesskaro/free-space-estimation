@@ -18,7 +18,7 @@ class YoloSeg:
             img, 
             device=device, 
             show=False,
-            retina_masks=True, 
+            retina_masks=False, 
             classes=[8], 
             iou=0.5, 
             verbose=False,

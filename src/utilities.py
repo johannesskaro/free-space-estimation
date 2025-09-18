@@ -423,18 +423,18 @@ def merge_lidar_onto_image(image, lidar_points, lidar_3d_points=None, intensitie
             value_norm = depths_normalized[i]
             rgba = colormap(value_norm)  # returns RGBA, take RGB
             #rgba = colormap(1.0 - value_norm)
-            #color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
-            color = (0, 0, 255)  # Red color for the point
+            color = (int(rgba[2]*255), int(rgba[1]*255), int(rgba[0]*255))
+            #color = (0, 0, 255)  # Red color for the point
             #cv2.circle(lidar_overlay, (x, y), point_size + 2, (255, 255, 255), -1)
             #cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
 
-            cv2.circle(image_with_lidar, (x, y), point_size + 2, (255, 255, 255), -1)
+            #cv2.circle(image_with_lidar, (x, y), point_size + 2, (255, 255, 255), -1)
             # Draw the actual filled color dot
-            cv2.circle(image_with_lidar, (x, y), point_size, color, -1)
+            #cv2.circle(image_with_lidar, (x, y), point_size, color, -1)
 
             #color = tuple(int(c * 255) for c in color[::-1])  # convert to BGR
             #color = (0, 0, 255)
-            #cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
+            cv2.circle(lidar_overlay, (x, y), point_size, color, -1)
 
     # Blend the original image and the lidar overlay
     #alpha = 0.8 #1  # Weight of the original image

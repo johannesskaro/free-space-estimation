@@ -34,12 +34,13 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 #Scen4_2 - Docking w. boats
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_28170706_HD1080_FPS15.svo" #right zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
-#ROSBAG_NAME = "scen4_2"
-#START_TIMESTAMP = 1689070899731613030 #+ 14000000000
+SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-20-43_28170706_HD1080_FPS15.svo"
+ROSBAG_NAME = "scen4_2"
+START_TIMESTAMP = 1689070899731613030 + 20000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
-#ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
-#svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 1689070867898886257, 1689070870444290257, 1689070872386914257]) 
+ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
+svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 1689070867898886257, 1689070870444290257, 1689070872386914257]) 
 
 
 #Scen5 - Docking with tube
@@ -57,13 +58,13 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 #Scen6 - Docking with tube further away
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
-SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
-ROSBAG_NAME = "scen6"
-START_TIMESTAMP = 1689073008428931880   #+ 4000000000  # Starting to see tube
+#SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
+#ROSBAG_NAME = "scen6"
+#START_TIMESTAMP = 1689073008428931880   #+ 4000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
-ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
-svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
+#ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
+#svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
 
 
 diffs_s = (ma2_clap_timestamps - svo_clap_timestamps) / (10 ** 9)
@@ -269,11 +270,14 @@ def main():
 
         rwps_mask_3d, plane_params_3d, rwps_succeded = rwps3d.segment_water_plane_using_point_cloud(depth_img)
         
-
+        
         #rwps3d.plot_3d_pcd(left_img=left_img, depth_img=depth_img)
 
-        contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask_2(left_img, rwps_mask_3d)
-        #contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
+        
+        #contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask_2(left_img, rwps_mask_3d)
+        contour_mask, upper_contour_mask, water_mask = fastsam.get_all_countours_and_best_iou_mask(left_img, rwps_mask_3d)
+
+        
         
         if not rwps_succeded:
             water_mask = ut.get_water_mask_from_contour_mask(contour_mask)
@@ -312,27 +316,27 @@ def main():
         runtime_ms = (end_time - start_time) * 1000
         print(f"Total time: {runtime_ms:.2f} ms")
 
-        #pink_color = [255, 0, 255]
+        pink_color = [255, 0, 255]
         #left_img_cr = left_img.copy() // 2 + 128
         #water_img_filtered = ut.blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
-        #water_img_refined = ut.blend_image_with_mask(left_img, water_mask_refined, pink_color, alpha1=1, alpha2=0.5)
+        water_img_refined = ut.blend_image_with_mask(left_img, water_mask_refined, pink_color, alpha1=1, alpha2=0.5)
         #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
         stixel_img = stixels.overlay_stixels_on_image(left_img)
         
 
         filtered_lidar_points, filtered_3d_points = stixels.get_filterd_lidar_points(xyz_proj, xyz_c)
-        lidar_stixel_img = ut.merge_lidar_onto_image(image=stixel_img, lidar_points=filtered_lidar_points, lidar_3d_points=None, alpha=1)
+        lidar_stixel_img = ut.merge_lidar_onto_image(image=stixel_img, lidar_points=filtered_lidar_points, lidar_3d_points=filtered_3d_points, alpha=1)
         #lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=xyz_proj, lidar_3d_points=xyz_c)
-        lidar_img = ut.merge_lidar_onto_image(image=left_img, lidar_points=xyz_proj, lidar_3d_points=None, alpha=1)
+        #lidar_img = ut.merge_lidar_onto_image(image=left_img, lidar_points=xyz_proj, lidar_3d_points=None, alpha=1)
 
-        #rwps_img = blend_image_with_mask(left_img_cr, rwps_mask_3d, pink_color, alpha1=1, alpha2=0.5)
-        #cv2.imshow("RWPS mask", rwps_img)
+        rwps_img = ut.blend_image_with_mask(left_img, rwps_mask_3d, pink_color, alpha1=1, alpha2=0.5)
+        cv2.imshow("RWPS mask", rwps_img)
         #cv2.imshow("left", left_img)
         #cv2.imshow("Filtered_mask", water_img_filtered)
-        #cv2.imshow("Refined_mask", water_img_refined)
+        cv2.imshow("Refined_mask", water_img_refined)
         cv2.imshow("Lidar stixel image", lidar_stixel_img)
         #cv2.imshow("stixel image", stixel_img)
-        cv2.imshow("Lidar image", lidar_img)
+        #cv2.imshow("Lidar image", lidar_img)
         #cv2.imshow("Contour mask", upper_contour_mask)
         #cv2.imshow("contour mask", contour_mask)
         #cv2.imshow("upper contour mask", upper_contour_mask)

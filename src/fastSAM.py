@@ -36,7 +36,7 @@ class FastSAMSeg:
         Returns:
         - np.array: Segmentation results.
         """
-        retina_masks = True
+        retina_masks = False
         verbose = False
         half = True
         imgsz = 640
@@ -247,7 +247,7 @@ class FastSAMSeg:
         
     def get_all_countours_and_best_iou_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=3000, iou_threshold=0.001) -> np.array:
 
-        #iou_threshold = 0.001
+        iou_threshold = 0.005
         H, W = img.shape[:2]
         contour_mask = np.zeros((H, W))
         #start_time = time.time( )
@@ -290,10 +290,11 @@ class FastSAMSeg:
         for i, mask in enumerate(binary_masks):
             if input_mask is not None:
                 iou = calculate_iou(input_mask_resized, mask)
-                #print(iou)
+                print(iou)
                 if iou > best_iou:
                     best_iou = iou
                     matched_index = i
+                    print(f"Best IoU", best_iou)
                 if iou >= iou_threshold:
                     accepted_masks.append(mask)
                 else:

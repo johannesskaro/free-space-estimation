@@ -71,28 +71,9 @@ class Stixels:
 
         delta_heading = ut.get_delta_heading(pose_prev, pose_curr)
 
-        top_boundary = self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
+        self.create_stixels_in_image(water_mask, disparity_img, depth_img, upper_contours, boat_mask)
 
-        #H, W = disparity_img.shape
-        #mask = np.zeros((H, W), dtype=bool)
-        #rows = np.repeat(top_boundary, self.stixel_width)
-        #cols = np.arange(W)
-
-        #thickness = 10
-
-        #half_thickness = thickness // 2
-
-        # Draw from -half_thickness to +half_thickness
-        #for offset in range(-half_thickness, half_thickness + 1):
-        #    r = rows + offset
-         #   valid = r < H  # ensure we stay within image bounds
-         #   mask[r[valid], cols[valid]] = 1
-        #mask[rows, cols] = 1
-
-        #top_boundary_img = ut.blend_image_with_mask(left_img, mask, [0, 255, 255], 1, 1)
-        #cv2.imshow("Top boundary", top_boundary_img.astype(np.uint8))
-
-        self.refine_dynamic_list_with_optical_flow_2(left_img, pose_prev, pose_curr, dt)
+        #self.refine_dynamic_list_with_optical_flow_2(left_img, pose_prev, pose_curr, dt)
         #self.refine_dynamic_list_with_optical_flow(left_img, depth_img, pose_prev, pose_curr, dt)
 
         self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
@@ -103,11 +84,11 @@ class Stixels:
 
         self.handle_propagated_depths(delta_heading)
 
-        #self.recursive_height_filter()
+        self.recursive_height_filter()
 
         self.recursive_depth_filter(delta_heading)
 
-        self.depth_continuity_gate()
+        #self.depth_continuity_gate()
 
         self.get_stixel_BEV_footprints()
 
@@ -122,12 +103,11 @@ class Stixels:
         top_boundary = get_optimal_height_numba(SSM, stereo_depth, free_space_boundary, self.num_stixels)
         self.get_stixel_height_base_list(free_space_boundary, top_boundary, boat_mask)
 
-        SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
-        H, W = disparity_img.shape
-        SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
-        cv2.imshow("SSM", SSM_resized.astype(np.uint8))
+        #SSM_normalized = cv2.normalize(SSM, None, 0, 255, cv2.NORM_MINMAX)
+        #H, W = disparity_img.shape
+        #SSM_resized = cv2.resize(SSM_normalized, (W, H), interpolation=cv2.INTER_NEAREST)
+        #cv2.imshow("SSM", SSM_resized.astype(np.uint8))
 
-        return top_boundary
 
     
     def get_prev_stixel_footprint(self):
@@ -293,13 +273,15 @@ class Stixels:
                 var_lidar = sigma_lidar**2
                 has_lidar = True
 
-            if np.isnan(z_stereo) or np.isinf(z_stereo):
+            if np.isnan(z_stereo) or np.isinf(z_stereo) or z_stereo > 10:
                 z_stereo = 0
                 var_stereo = np.inf
+                has_stereo = False
             else:
                 sigma_px = 0.5 
                 sigma_stereo = sigma_px * z_stereo**2 / (fx * b)
                 var_stereo = sigma_stereo**2
+                has_stereo = True
             
             # Prediction step
 
@@ -316,52 +298,54 @@ class Stixels:
                 z_prop = self.prev_stixel_footprints_curr_frame[idx, 0]
                 var_prop = var_fused_prev + var_motion
                 #print("var_motion: ", var_motion)
+                has_prop = True
 
             else:
                 z_prop = 0
                 var_prop = np.inf
+                has_prop = False
 
             # Update step
 
-            if z_stereo < 10:
-
-                var_fused = 1 / ((1 / var_lidar) + (1 / var_stereo) + (1 / var_prop) + 1e-10)
-                z_fused = var_fused * ((z_lidar / var_lidar) + (z_stereo / var_stereo) + (z_prop / var_prop))
-
-            else:
-
-                var_fused = 1 / ((1 / var_lidar) + (1 / var_prop) + 1e-10)
-                z_fused = var_fused * ((z_lidar / var_lidar) + (z_prop / var_prop))
+            var_fused = 1 / ((1 / var_lidar) + (1 / var_stereo) + (1 / var_prop) + 1e-10)
+            z_fused = var_fused * ((z_lidar / var_lidar) + (z_stereo / var_stereo) + (z_prop / var_prop))
 
 
             
             if not has_lidar:
-                self.stixel_validity[n] = False
+                #self.stixel_validity[n] = False
                 self.stixel_has_measurement[n] = False
                 #z_lidar = self.max_range
 
-                if z_prop > 0:
+                if has_prop:
                     #print("using prop lidar depth")
                     self.using_prop_depth[n] = True
 
             else:
-                self.stixel_validity[n] = True
+                #self.stixel_validity[n] = True
                 self.stixel_has_measurement[n] = True
                 
                 #print(z_fused)
 
             # If all depths are invalid
+
+            if not (has_lidar or has_stereo or has_prop):
+                self.stixel_validity[n] = False
+
+            else:
+                self.stixel_validity[n] = True
+
             #if z_fused <= 0:
-             #   self.stixel_validity[n] = False
+                #self.stixel_validity[n] = False
                 #self.stixel_has_measurement[n] = False
             #    z_fused = self.max_range
 
-           # else:
-            #    self.stixel_validity[n] = True
+            #else:
+                #self.stixel_validity[n] = True
                 #self.stixel_has_measurement[n] = True
 
 
-            self.stixel_fused_depths[n] = z_lidar # z_fused
+            self.stixel_fused_depths[n] = z_fused
             self.stixel_fused_depths_var[n] = var_fused
 
             #print(var_fused)
@@ -752,10 +736,10 @@ class Stixels:
 
         self.height_base_list[:] = height_base_list
 
-        #if boat_mask is not None:
-        #    self.dynamic_stixel_list = compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, self.stixel_width, self.num_stixels)
-        #else:
-        self.dynamic_stixel_list = np.full(self.num_stixels, False, dtype=bool)
+        if boat_mask is not None:
+            self.dynamic_stixel_list = compute_dynamic_stixels(v_top_array, v_f_array, boat_mask, self.stixel_width, self.num_stixels)
+        else:
+            self.dynamic_stixel_list = np.full(self.num_stixels, False, dtype=bool)
 
         return self.height_base_list
     
@@ -900,7 +884,7 @@ class Stixels:
 
         return Polygon(polygon_points)
 
-    def overlay_stixels_on_image(self, image, min_depth=0, max_depth=30):
+    def overlay_stixels_on_image(self, image, min_depth=0, max_depth=60):
 
         overlay = np.zeros_like(image)
 
