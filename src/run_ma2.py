@@ -36,7 +36,7 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-20-43_28170706_HD1080_FPS15.svo"
 ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 + 20000000000
+START_TIMESTAMP = 1689070899731613030 + 26000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -206,7 +206,7 @@ def main():
     rwps3d = RWPS(config_file=rwps_config_path)
     temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=t_body_to_cam, R_imu_to_cam=R_body_to_cam)
     stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params, t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam)
-    optical_flow = OpticalFlow(cam_params=cam_params, stixel_width=10)
+    #optical_flow = OpticalFlow(cam_params=cam_params, stixel_width=10)
 
     rwps3d.set_camera_params(cam_params, P1)
 
@@ -289,7 +289,15 @@ def main():
         # Temporal Filtering
         
         water_mask_filtered = temporal_filtering.get_filtered_frame_no_motion_compensation(water_mask)
+        water_mask_failure = temporal_filtering.detect_segmentation_failure(water_mask_filtered, plane_params_3d)
+
+
+        print(water_mask_failure)
+
+
         water_mask_refined = yolo.refine_water_mask(boat_mask, water_mask_filtered)
+
+        
 
         # Stixel pipeline
         
@@ -298,6 +306,7 @@ def main():
         stixel_footprints = stixels.run_stixel_pipeline(
                 left_img=left_img,
                 water_mask=water_mask_refined, 
+                water_mask_failure=water_mask_failure,
                 disparity_img=disparity_img, 
                 depth_img=depth_img, 
                 upper_contours=upper_contour_mask, 

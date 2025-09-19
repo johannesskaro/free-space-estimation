@@ -60,7 +60,7 @@ class Stixels:
 
         self.projection_rays = self.get_projection_rays()
 
-    def run_stixel_pipeline(self, left_img, water_mask, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, dt, boat_mask=None):
+    def run_stixel_pipeline(self, left_img, water_mask, water_mask_failure, disparity_img, depth_img, upper_contours, xyz_proj, xyz_c, pose_prev, pose_curr, dt, boat_mask=None):
 
         self.prev_stixel_footprints = self.stixel_footprints.copy()
         self.prev_stixel_lidar_depths = self.stixel_lidar_depths.copy()
@@ -68,6 +68,13 @@ class Stixels:
         self.prev_stixel_has_measurement = self.stixel_has_measurement.copy()
         self.prev_stixel_validity = self.stixel_validity.copy()
         self.prev_using_prop_depth = self.using_prop_depth.copy()
+
+
+        if water_mask_failure:
+            print("Segmentation failure detected! Skipping stixel update.")
+            self.stixel_validity = np.full(self.num_stixels, False, dtype=bool)
+            return self.prev_stixel_footprints.copy()
+
 
         delta_heading = ut.get_delta_heading(pose_prev, pose_curr)
 
@@ -847,6 +854,8 @@ class Stixels:
         filtered_3d_points = []
 
         for n, stixel in enumerate(self.height_base_list):
+            if self.stixel_validity[n] == False:
+                continue
             stixel_top = stixel[0]
             stixel_base = stixel[1]
             left_bound = n * self.stixel_width
@@ -897,6 +906,7 @@ class Stixels:
                 stixel_depth = self.stixel_fused_depths[n]
                 if not self.stixel_validity[n]:
                     stixel_depth = self.max_range
+                    continue
                 norm_depth = (stixel_depth - min_depth) / (max_depth - min_depth)
                 norm_depth = np.clip(norm_depth, 0, 1)
                 rgba = cmap(norm_depth)

@@ -290,11 +290,11 @@ class FastSAMSeg:
         for i, mask in enumerate(binary_masks):
             if input_mask is not None:
                 iou = calculate_iou(input_mask_resized, mask)
-                print(iou)
+                #print(iou)
                 if iou > best_iou:
                     best_iou = iou
                     matched_index = i
-                    print(f"Best IoU", best_iou)
+                    #print(f"Best IoU", best_iou)
                 if iou >= iou_threshold:
                     accepted_masks.append(mask)
                 else:

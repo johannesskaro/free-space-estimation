@@ -4,6 +4,7 @@ import cv2
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 from numba import njit, prange
+import utilities as ut
 
 class TemporalFiltering:
     def __init__(self, cam_matrix, N, t_imu_to_cam, R_imu_to_cam):
@@ -15,6 +16,7 @@ class TemporalFiltering:
         self.past_frames = deque(maxlen=self.N)
         self.past_poses = deque(maxlen=self.N)
         self.rolling_sum = None
+        self.camera_height = -1.6  # meters
 
 
     def add_frame(self, frame):
@@ -47,6 +49,39 @@ class TemporalFiltering:
         self.add_frame(water_mask)
 
         return smoothed_water_mask
+    
+    def detect_segmentation_failure(self, water_mask, plane_model):
+
+        water_ratio = np.mean(water_mask)
+        if water_ratio < 0.1 or water_ratio > 0.9:
+            print("Water ratio:", water_ratio)
+            return True
+        
+        prev_mask = self.past_frames[-1] if self.past_frames else None
+        #diff = np.mean(np.abs(water_mask - prev_mask)) if prev_mask is not None else 0
+
+        iou = ut.calculate_iou(water_mask, prev_mask)
+
+        if iou < 0.5:
+            print("Mask iou:", iou)
+            return True
+        
+
+
+        normal = plane_model[:3]
+        d = plane_model[3]
+        normal_length = np.linalg.norm(normal)
+        height = d / normal_length
+
+        if abs(height - self.camera_height) > 0.2:
+            print("Plane height deviation:", abs(height - self.camera_height))
+            return True
+        
+        return False
+
+        
+        
+
     
     
     def compute_homography(self, R, t, n, d, K):
