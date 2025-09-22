@@ -11,7 +11,7 @@ from yolo import YoloSeg
 from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
-from stixels import Stixels, get_free_space_boundary
+from stixels import Stixels
 from optical_flow import OpticalFlow
 from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_local, plot_previous_gnss_iterations_local, plot_previous_gnss_iterations_global
 

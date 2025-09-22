@@ -143,7 +143,7 @@ class RWPS:
             distance_threshold=self.distance_threshold,
             ransac_n=self.ransac_n,
             num_iterations=self.num_iterations,
-            probability=self.probability,
+            #probability=self.probability,
         )
 
         if not plane_model.any(): 

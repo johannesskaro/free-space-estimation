@@ -65,8 +65,6 @@ class TemporalFiltering:
         if iou < 0.5:
             print("Mask iou:", iou)
             return True
-        
-
 
         normal = plane_model[:3]
         d = plane_model[3]
