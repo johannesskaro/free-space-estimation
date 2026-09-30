@@ -85,7 +85,7 @@ export MA2_DATA_ROOT=/path/to/2023-07-11_Multi_ZED_Summer
 ## Running
 
 ```bash
-python run_ma2.py --scenario scen4_2
+python run_ma2.py --scenario scen6
 ```
 
 This opens a window showing the stixels, colored by depth, and the lidar
