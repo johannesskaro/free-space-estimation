@@ -195,7 +195,8 @@ tools/
 
   Check all three before using another vessel.
 - **Tuning.** Most parameters are keyword arguments with defaults:
-  - `Stixels(...)`: number of stixels, min height, max range.
+  - `Stixels(...)`: number of stixels, min height, max range, and how many
+    frames a depth may be propagated without lidar (`max_prop_frames`, default 5).
   - The weights in `create_SSM_numba` (`stixels.py`).
   - The IoU threshold in `FastSAMSeg.get_contours_and_water_mask`.
   - The RANSAC settings in `configs/rwps.json`.

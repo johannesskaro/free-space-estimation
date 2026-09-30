@@ -16,12 +16,15 @@ class Stixels:
     (forward, right) in the camera frame, one row per stixel.
     """
 
-    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20, max_range=60, cam_fov=110, depth_filter=True):
+    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20, max_range=60, cam_fov=110, depth_filter=True, max_prop_frames=5):
         """depth_filter: carry depth over from the previous frame. If False, each
-        frame's depth comes only from that frame's lidar and stereo."""
+        frame's depth comes only from that frame's lidar and stereo.
+        max_prop_frames: how many frames in a row a depth may be propagated without
+        a new lidar measurement before it is dropped."""
         self.num_stixels = num_stixels
         self.img_shape = img_shape
         self.depth_filter = depth_filter
+        self.max_prop_frames = max_prop_frames
         self.cam_params = cam_params
         self.stixel_width  = int(img_shape[1] // self.num_stixels)
         self.min_stixel_height = min_stixel_height
@@ -54,6 +57,7 @@ class Stixels:
         self.association_depth = np.full(num_stixels, -1, dtype=int)
         self.association_height = np.full(num_stixels, -1, dtype=int)
         self.prop_set = set()
+        self.prop_age = np.zeros(num_stixels, dtype=int)  # frames propagated without lidar
 
         self.R_body_to_cam = np.array(R_body_to_cam)
         self.t_body_to_cam = np.array(t_body_to_cam)
@@ -183,7 +187,16 @@ class Stixels:
         self.association_depth = assoc_depth
 
     def handle_propagated_depths(self, delta_heading):
-        DELTA_IDX = int(round(delta_heading / self.ray_spacing))
+        """Decide which depth associations may be used to propagate depth into
+        stixels without a lidar measurement. A propagation starts when a stixel
+        loses lidar, follows the heading change, and is dropped after
+        max_prop_frames frames without new lidar."""
+        DELTA_IDX = int(round(np.rad2deg(delta_heading) / self.ray_spacing))
+
+        prev_prop_set = self.prop_set
+        prev_prop_age = self.prop_age
+        prop_set = set()
+        prop_age = np.zeros(self.num_stixels, dtype=int)
 
         assoc = self.association_depth.copy()
         z_lidar_curr = self.stixel_lidar_depths.copy()
@@ -199,24 +212,25 @@ class Stixels:
                 continue
 
             if has_lidar_curr[n]:
-                # if we now have a direct lidar read, drop any old‐prop entry
-                self.prop_set.discard(idx)
+                # direct lidar read: no propagation needed
+                continue
 
             elif has_lidar_prev[idx]:
                 # we lost the current lidar but had it before → start propagating
-                self.prop_set.add(n)
+                prop_set.add(n)
+                prop_age[n] = 1
+
+            elif idx in prev_prop_set and n == idx + DELTA_IDX and prev_prop_age[idx] < self.max_prop_frames:
+                # neither old nor new has lidar → continue an ongoing propagation
+                prop_set.add(n)
+                prop_age[n] = prev_prop_age[idx] + 1
 
             else:
-                # neither old nor new has lidar → check if we should shift the propagation
-                if idx in self.prop_set:
-                    idx_pred = idx + DELTA_IDX
-                    if 0 <= idx_pred < self.num_stixels and n == idx_pred:
-                        self.prop_set.discard(idx)
-                        self.prop_set.add(n)
-                    else:
-                        assoc[n] = -1
+                assoc[n] = -1
 
         self.association_depth = assoc
+        self.prop_set = prop_set
+        self.prop_age = prop_age
 
     def recursive_height_filter(self, alpha=0.7):
         for n in range(self.num_stixels):
