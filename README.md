@@ -1,7 +1,7 @@
 # Free-space estimation
 
 ![Stixels on the camera image (left) and the resulting free space seen from above (right)](docs/scen4_2_at_21s.png)
-*Docking scenario `scen4_2`, 21 s in. Left: stixels colored by distance. Right: the free space (blue) and obstacles, seen from above, with the camera center in red.*
+*Docking scenario. Left: stixels colored by distance. Right: the free space (blue) and obstacles, seen from above, with the camera center in red.*
 
 Estimates the free space (navigable water) around an autonomous ferry from a
 stereo camera and a lidar. The result is a *stixel world*: the image is split
@@ -36,7 +36,7 @@ For each camera frame, `FreeSpacePipeline` in `free_space/pipeline.py` runs:
 ## Requirements
 
 - Linux with an NVIDIA GPU. Tested on Ubuntu 20.04 (including WSL2) with an
-  8 GB RTX 4070 laptop GPU. Each frame takes about 0.6 s.
+  8 GB RTX 4070 laptop GPU. See [Runtime](#runtime) for speed.
 - CUDA 12.
 - [ZED SDK 4.2](https://www.stereolabs.com/developers/release) and its Python
   API (`pyzed`), needed to read the `.svo` recordings. You do not need a ZED
@@ -105,7 +105,28 @@ compile on first use.
 | `--save-video out.mp4` | Save the stixel view as a video |
 | `--save-bev out.mp4` | Save a bird's-eye view of the free space as a video |
 | `--save-jsonl out.jsonl` | Append each frame's stixel footprints, validity, dynamic flags, depth variance and pose to a JSON Lines file |
-| `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. Faster, with coarser water edges. Results differ from the thesis |
+| `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. About 3× faster, with coarser water edges. Results differ from the thesis. See [Runtime](#runtime) |
+
+### Runtime
+
+**If you need anything close to real time, use `--no-retina-masks`.** By
+default FastSAM computes every mask at full image resolution (1080×1920), and
+processing roughly 100 full-resolution masks per frame is slow.
+
+Measured on the RTX 4070 laptop GPU on `scen6` (whole pipeline, after warm-up):
+
+| Setting | Time per frame |
+|---|---|
+| Default (retina masks) | 0.6–0.95 s |
+| `--no-retina-masks` | ~0.3 s |
+
+The default reproduces the thesis results exactly. Without retina masks, the
+water edges and segment contours are coarser, so the stixels differ. Check
+that the results are good enough for your use.
+Even then, the pipeline runs at about 3 Hz, while the ZED records at 15 Hz. For
+online use on the vessel, expect to optimize further, for example by running
+FastSAM at a lower resolution or skipping frames. In your own code, set this with
+`FreeSpacePipeline(..., retina_masks=False)`.
 
 ### Scenarios
 
