@@ -42,13 +42,14 @@ class FreeSpacePipeline:
                  fastsam_weights="weights/FastSAM-x.pt",
                  yolo_weights="weights/yolo11n-seg.pt",
                  rwps_config="configs/rwps.json",
-                 num_stixels=192):
+                 num_stixels=192,
+                 retina_masks=True):
         self.height, self.width = image_size
         cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy": K[1,1], "b": baseline}
         P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
 
         self.yolo = YoloSeg(model_path=yolo_weights)
-        self.fastsam = FastSAMSeg(model_path=fastsam_weights)
+        self.fastsam = FastSAMSeg(model_path=fastsam_weights, retina_masks=retina_masks)
         self.rwps = RWPS(config_file=rwps_config)
         self.rwps.set_camera_params(cam_params, P1)
         self.temporal_filtering = TemporalFiltering(N=3)

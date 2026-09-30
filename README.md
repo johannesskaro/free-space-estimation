@@ -1,5 +1,8 @@
 # Free-space estimation
 
+![Stixels on the camera image (left) and the resulting free space seen from above (right)](docs/scen4_2_at_21s.png)
+*Docking scenario `scen4_2`, 21 s in. Left: stixels colored by distance. Right: the free space (blue) and obstacles, seen from above, with the camera center in red.*
+
 Estimates the free space (navigable water) around an autonomous ferry from a
 stereo camera and a lidar. The result is a *stixel world*: the image is split
 into 192 vertical columns, and for each one the method finds where the water
@@ -102,6 +105,7 @@ compile on first use.
 | `--save-video out.mp4` | Save the stixel view as a video |
 | `--save-bev out.mp4` | Save a bird's-eye view of the free space as a video |
 | `--save-jsonl out.jsonl` | Append each frame's stixel footprints, validity, dynamic flags, depth variance and pose to a JSON Lines file |
+| `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. Faster, with coarser water edges. Results differ from the thesis |
 
 ### Scenarios
 

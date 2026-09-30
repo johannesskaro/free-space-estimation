@@ -12,14 +12,20 @@ class FastSAMSeg:
     step uses as obstacle edge cues.
     """
 
-    def __init__(self, model_path: str = './weights/FastSAM-x.pt'):
+    def __init__(self, model_path: str = './weights/FastSAM-x.pt', retina_masks: bool = True):
+        """
+        retina_masks: compute masks at full image resolution. False computes them at
+        the model's input resolution (e.g. 576x1024) and upscales, which is faster
+        but gives coarser mask edges.
+        """
+        self.retina_masks = retina_masks
         try:
             self.model = FastSAM(model_path)
         except Exception as e:
             raise RuntimeError(f"Error loading FastSAM model from {model_path}. Reason: {e}")
 
     def _segment_img(self, img: np.array, device: str = 'cuda'):
-        results = self.model(img, device=device, retina_masks=True, verbose=False, half=True, show=False)
+        results = self.model(img, device=device, retina_masks=self.retina_masks, verbose=False, half=True, show=False)
         return results[0]
 
     def get_contours_and_water_mask(self, img: np.array, input_mask: np.array, device: str = 'cuda', min_area=3000, iou_threshold=0.005):

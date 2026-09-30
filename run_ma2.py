@@ -31,6 +31,8 @@ def parse_args(argv=None):
     parser.add_argument("--save-bev", metavar="PATH", help="Save the bird's-eye view to an .mp4")
     parser.add_argument("--save-jsonl", metavar="PATH", help="Append per-frame stixel footprints to a .jsonl file")
     parser.add_argument("--fps", type=float, default=5.0, help="Frame rate of saved videos")
+    parser.add_argument("--no-retina-masks", action="store_true",
+                        help="Compute FastSAM masks at model resolution instead of full resolution (faster, coarser)")
     args = parser.parse_args(argv)
     if args.data_root is None:
         parser.error("set --data-root or the MA2_DATA_ROOT environment variable")
@@ -66,6 +68,7 @@ def main(argv=None):
         fastsam_weights=os.path.join(REPO_DIR, "weights", "FastSAM-x.pt"),
         yolo_weights=os.path.join(REPO_DIR, "weights", "yolo11n-seg.pt"),
         rwps_config=os.path.join(REPO_DIR, "configs", "rwps.json"),
+        retina_masks=not args.no_retina_masks,
     )
 
     video = make_writer(args.save_video, args.fps, (width, height)) if args.save_video else None
