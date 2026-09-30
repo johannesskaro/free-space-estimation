@@ -186,21 +186,6 @@ tools/
   importing it changes which CUDA libraries are loaded, which slightly changes
   the ZED depth. It is kept so the code reproduces the thesis results exactly.
 
-### Checking that a change doesn't alter results
-
-`tools/capture_reference.py` records the per-frame inputs and outputs of the
-stixel step, and `tools/compare_reference.py` compares two recordings:
-
-```bash
-python tools/capture_reference.py results/before --scenario scen6 --num-frames 30
-# ...make your change...
-python tools/capture_reference.py results/after --scenario scen6 --num-frames 30
-python tools/compare_reference.py results/before results/after
-```
-
-To rule out ZED noise, record the ZED depth once with `--record-inputs DIR`
-and pass `--replay-inputs DIR` to later runs.
-
 ## Original thesis code
 
 This repository was cleaned up for handover. The code exactly as it was used
