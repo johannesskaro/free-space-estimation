@@ -120,14 +120,6 @@ Measured on the RTX 4070 laptop GPU on `scen6` (whole pipeline, after warm-up):
 | Default (retina masks) | 0.6–0.95 s |
 | `--no-retina-masks` | ~0.3 s |
 
-The default reproduces the thesis results exactly. Without retina masks, the
-water edges and segment contours are coarser, so the stixels differ. Check
-that the results are good enough for your use.
-Even then, the pipeline runs at about 3 Hz, while the ZED records at 15 Hz. For
-online use on the vessel, expect to optimize further, for example by running
-FastSAM at a lower resolution or skipping frames. In your own code, set this with
-`FreeSpacePipeline(..., retina_masks=False)`.
-
 ### Scenarios
 
 | Name | Description |
