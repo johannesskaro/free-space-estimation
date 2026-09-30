@@ -1,7 +1,3 @@
-# cupy is not used, but importing it changes which CUDA libraries are loaded, which
-# slightly changes the ZED SDK's neural depth. Keep it to reproduce the thesis
-# results bit for bit; removing it changes results by only a few micrometers.
-import cupy  # noqa: F401
 import numpy as np
 import pyzed.sl as sl
 

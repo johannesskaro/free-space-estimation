@@ -43,7 +43,8 @@ class FreeSpacePipeline:
                  yolo_weights="weights/yolo11n-seg.pt",
                  rwps_config="configs/rwps.json",
                  num_stixels=192,
-                 retina_masks=True):
+                 retina_masks=True,
+                 depth_filter=True):
         self.height, self.width = image_size
         cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy": K[1,1], "b": baseline}
         P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
@@ -54,7 +55,8 @@ class FreeSpacePipeline:
         self.rwps.set_camera_params(cam_params, P1)
         self.temporal_filtering = TemporalFiltering(N=3)
         self.stixels = Stixels(num_stixels=num_stixels, img_shape=image_size, cam_params=cam_params,
-                               t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam)
+                               t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam,
+                               depth_filter=depth_filter)
 
         self.prev_timestamp = 0
         self.prev_pose = np.array([0, 0, 0, 0, 0, 0, 1], dtype=float)  # identity quaternion

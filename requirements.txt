@@ -9,6 +9,5 @@ open3d==0.13.0
 torch==2.4.1
 torchvision==0.19.1
 ultralytics==8.3.202
-cupy-cuda12x==12.3.0
 rosbags==0.9.23
 PyYAML==6.0.2

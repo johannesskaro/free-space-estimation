@@ -108,6 +108,7 @@ compile on first use.
 | `--save-bev out.mp4` | Save a bird's-eye view of the free space as a video |
 | `--save-jsonl out.jsonl` | Append each frame's stixel footprints, validity, dynamic flags, depth variance and pose to a JSON Lines file |
 | `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. About 3× faster, with coarser water edges |
+| `--no-depth-filter` | Don't carry stixel depth over from previous frames. Each stixel uses only the current frame's lidar and stereo, so there are no propagated (yellow) stixels |
 
 ### Runtime
 
@@ -201,9 +202,6 @@ tools/
 - **Results are not always bit-for-bit repeatable.** The ZED SDK's neural
   depth can differ slightly between runs on some sequences (scen4_2, for
   example). Everything after it is deterministic.
-- **The `cupy` import in `zed.py` is intentional.** CuPy is not used, but
-  importing it changes which CUDA libraries are loaded, which slightly changes
-  the ZED depth. It is kept so the code reproduces the thesis results exactly.
 
 ## Original thesis code
 
@@ -211,5 +209,4 @@ This repository was cleaned up for handover. The code exactly as it was used
 in the thesis, including experiments that were removed here (optical-flow
 motion detection, motion-compensated filtering, global map plots and the
 BlueBoat/microAmpere runner), is on the
-[`thesis-snapshot`](../../tree/thesis-snapshot) branch. The cleaned-up code
-produces identical results.
+[`thesis-snapshot`](../../tree/thesis-snapshot) branch.

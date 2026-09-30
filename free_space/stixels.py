@@ -16,9 +16,12 @@ class Stixels:
     (forward, right) in the camera frame, one row per stixel.
     """
 
-    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20, max_range=60, cam_fov=110):
+    def __init__(self, num_stixels, img_shape, cam_params, t_body_to_cam, R_body_to_cam, min_stixel_height=20, max_range=60, cam_fov=110, depth_filter=True):
+        """depth_filter: carry depth over from the previous frame. If False, each
+        frame's depth comes only from that frame's lidar and stereo."""
         self.num_stixels = num_stixels
         self.img_shape = img_shape
+        self.depth_filter = depth_filter
         self.cam_params = cam_params
         self.stixel_width  = int(img_shape[1] // self.num_stixels)
         self.min_stixel_height = min_stixel_height
@@ -82,7 +85,10 @@ class Stixels:
 
         self.associate_prev_stixels(delta_heading)
 
-        self.handle_propagated_depths(delta_heading)
+        if self.depth_filter:
+            self.handle_propagated_depths(delta_heading)
+        else:
+            self.association_depth = np.full(self.num_stixels, -1, dtype=int)
 
         self.recursive_height_filter()
 

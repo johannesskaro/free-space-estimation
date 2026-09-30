@@ -113,7 +113,7 @@ class RWPS:
         unit_normal = normal / normal_length
         height = d / normal_length
 
-        if self.prev_planemodel is not None:
+        if self.prev_planemodel is None:
             self.init_planemodel = plane_model
             self.init_height = height
             self.init_unitnormal = unit_normal
@@ -253,7 +253,7 @@ class RWPS:
     def validity_check(self, prev_height, prev_normal, current_height, current_normal):
         if abs(prev_height - current_height) > self.validity_height_thr:
             return False
-        if np.dot(prev_normal, current_normal) < np.cos(self.validity_angle_thr):
+        if np.dot(prev_normal, current_normal) < np.cos(np.deg2rad(self.validity_angle_thr)):
             return False
         return True
 
