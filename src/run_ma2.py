@@ -12,7 +12,6 @@ from fastSAM import FastSAMSeg
 from RWPS import RWPS
 from temporal_filtering import TemporalFiltering
 from stixels import Stixels
-from optical_flow import OpticalFlow
 from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_local, plot_previous_gnss_iterations_local, plot_previous_gnss_iterations_global
 
 #Scen1 - Into tunnel
@@ -208,7 +207,6 @@ def main():
     rwps3d = RWPS(config_file=rwps_config_path)
     temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=t_body_to_cam, R_imu_to_cam=R_body_to_cam)
     stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params, t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam)
-    optical_flow = OpticalFlow(cam_params=cam_params, stixel_width=10)
 
     #print("t_body_to_cam:\n", t_body_to_cam)
     #print("R_body_to_cam:\n", R_body_to_cam)
@@ -389,7 +387,6 @@ def main():
         #stixels.plot_projection_rays_and_associated_points(stixels.association_depth.copy())
         #stixels.plot_prev_and_curr_stixel_footprints(prev_stixel_footprints, stixel_footprints)
 
-        #optical_flow.plot_flow(left_img, dt=0)
 
         #stixel_points_list.append(stixel_footprints)
         #plot_previous_gnss_iterations_local(gnss_pos_list, gnss_ori_list, stixel_points_list)
