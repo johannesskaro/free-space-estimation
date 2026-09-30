@@ -36,7 +36,7 @@ from utilities_map import plot_gnss_iteration_video, plot_gnss_iteration_video_l
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-20-43_5256916_HD1080_FPS15.svo" #left zed
 SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-20-43_28170706_HD1080_FPS15.svo"
 ROSBAG_NAME = "scen4_2"
-START_TIMESTAMP = 1689070899731613030 + 26000000000
+START_TIMESTAMP = 1689070899731613030 #+ 26000000000
 #START_TIMESTAMP = 1689070888907352002# Starting to see kayak
 #START_TIMESTAMP = 1689070920831613030 #Docking
 ma2_clap_timestamps = np.array([1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680])
@@ -58,13 +58,13 @@ svo_clap_timestamps = np.array([1689070864415441257, 1689070866090016257, 168907
 #Scen6 - Docking with tube further away
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
 #SVO_FILE_PATH = r"C:\Users\johro\Documents\2023-07-11_Multi_ZED_Summer\ZED camera svo files\2023-07-11_12-55-58_5256916_HD1080_FPS15.svo" # left zed
-#SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
-#ROSBAG_NAME = "scen6"
-#START_TIMESTAMP = 1689073008428931880   #+ 4000000000  # Starting to see tube
+SVO_FILE_PATH = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo" #port side zed
+ROSBAG_NAME = "scen6"
+START_TIMESTAMP = 1689073008428931880   #+ 4000000000  # Starting to see tube
 #START_TIMESTAMP = 1689073018428931880 # tube almost passed
 #START_TIMESTAMP = 1689073021428931880 + 1000000000 # tube passed
-#ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
-#svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
+ma2_clap_timestamps = np.array([1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707])
+svo_clap_timestamps = np.array([1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269])
 
 
 diffs_s = (ma2_clap_timestamps - svo_clap_timestamps) / (10 ** 9)
@@ -194,6 +194,8 @@ def main():
     cam_params = {"cx": K[0,2], "cy": K[1,2], "fx": K[0,0], "fy":K[1,1], "b": baseline}
     P1 = K @ np.hstack((np.eye(3), np.zeros((3, 1))))
 
+
+
     #t_body_to_cam = np.array([-TRANS_FLOOR_TO_LIDAR[0], -TRANS_FLOOR_TO_LIDAR[1], TRANS_FLOOR_TO_LIDAR[2]])
     t_body_to_cam = np.array([- TRANS_FLOOR_TO_LIDAR[0], - TRANS_FLOOR_TO_LIDAR[1]])
 
@@ -206,7 +208,10 @@ def main():
     rwps3d = RWPS(config_file=rwps_config_path)
     temporal_filtering = TemporalFiltering(K, N=3, t_imu_to_cam=t_body_to_cam, R_imu_to_cam=R_body_to_cam)
     stixels = Stixels(num_stixels=192, img_shape=(height, width), cam_params=cam_params, t_body_to_cam=t_body_to_cam, R_body_to_cam=R_body_to_cam)
-    #optical_flow = OpticalFlow(cam_params=cam_params, stixel_width=10)
+    optical_flow = OpticalFlow(cam_params=cam_params, stixel_width=10)
+
+    #print("t_body_to_cam:\n", t_body_to_cam)
+    #print("R_body_to_cam:\n", R_body_to_cam)
 
     rwps3d.set_camera_params(cam_params, P1)
 
@@ -292,7 +297,7 @@ def main():
         water_mask_failure = temporal_filtering.detect_segmentation_failure(water_mask_filtered, plane_params_3d)
 
 
-        print(water_mask_failure)
+        #print(water_mask_failure)
 
 
         water_mask_refined = yolo.refine_water_mask(boat_mask, water_mask_filtered)
@@ -328,7 +333,7 @@ def main():
         pink_color = [255, 0, 255]
         #left_img_cr = left_img.copy() // 2 + 128
         #water_img_filtered = ut.blend_image_with_mask(left_img, water_mask_filtered, pink_color, alpha1=1, alpha2=0.5)
-        water_img_refined = ut.blend_image_with_mask(left_img, water_mask_refined, pink_color, alpha1=1, alpha2=0.5)
+        #water_img_refined = ut.blend_image_with_mask(left_img, water_mask_refined, pink_color, alpha1=1, alpha2=0.5)
         #water_img = blend_image_with_mask(left_img, water_mask, pink_color, alpha1=1, alpha2=0.5)
         stixel_img = stixels.overlay_stixels_on_image(left_img)
         
@@ -338,11 +343,11 @@ def main():
         #lidar_stixel_img = merge_lidar_onto_image(image=stixel_img, lidar_points=xyz_proj, lidar_3d_points=xyz_c)
         #lidar_img = ut.merge_lidar_onto_image(image=left_img, lidar_points=xyz_proj, lidar_3d_points=None, alpha=1)
 
-        rwps_img = ut.blend_image_with_mask(left_img, rwps_mask_3d, pink_color, alpha1=1, alpha2=0.5)
-        cv2.imshow("RWPS mask", rwps_img)
+        #rwps_img = ut.blend_image_with_mask(left_img, rwps_mask_3d, pink_color, alpha1=1, alpha2=0.5)
+        #cv2.imshow("RWPS mask", rwps_img)
         #cv2.imshow("left", left_img)
         #cv2.imshow("Filtered_mask", water_img_filtered)
-        cv2.imshow("Refined_mask", water_img_refined)
+        #cv2.imshow("Refined_mask", water_img_refined)
         cv2.imshow("Lidar stixel image", lidar_stixel_img)
         #cv2.imshow("stixel image", stixel_img)
         #cv2.imshow("Lidar image", lidar_img)

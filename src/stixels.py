@@ -85,7 +85,8 @@ class Stixels:
 
         self.get_stixel_depths_from_lidar(xyz_proj, xyz_c)
 
-        self.transform_prev_stixels_into_curr_frame_old(pose_prev, pose_curr)
+        #self.transform_prev_stixels_into_curr_frame_old(pose_prev, pose_curr)
+        self.transform_prev_stixels_into_curr_frame(pose_prev, pose_curr)
 
         self.associate_prev_stixels(delta_heading)
 

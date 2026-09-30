@@ -36,7 +36,7 @@ class FastSAMSeg:
         Returns:
         - np.array: Segmentation results.
         """
-        retina_masks = False
+        retina_masks = True
         verbose = False
         half = True
         imgsz = 640
