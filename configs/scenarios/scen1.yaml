@@ -1,0 +1,10 @@
+name: scen1
+description: Into tunnel
+svo_file: ZED camera svo files/2023-07-11_11-30-51_28170706_HD1080_FPS15.svo
+rosbag: bags/scen1
+start_timestamp: 1689068012194593719  # ns, GNSS clock
+
+# Hand claps visible in both recordings, used to sync the ZED clock to the GNSS clock
+clap_timestamps:
+  ma2: [1689068801634572145, 1689068803035078922, 1689068804635190937, 1689068806436892969, 1689068809235474632]
+  svo: [1689068801796052729, 1689068803135787729, 1689068804743766729, 1689068806686255729, 1689068809298756729]

@@ -1,21 +1,27 @@
-from rosbags.rosbag2 import Reader
-from rosbags.typesys import Stores, get_typestore
+"""
+Play back the raw lidar point clouds of a scenario in an Open3D window.
+
+Usage: python tools/view_lidar.py --scenario scen4_2 --data-root /path/to/data
+"""
+import argparse
+import os
+import sys
+import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
-import matplotlib.pyplot as plt
-import time
-import matplotlib.cm as cm
+from rosbags.rosbag2 import Reader
+from rosbags.typesys import Stores, get_typestore
 
-ROSBAG_FOLDER = "/home/johro/datasets/2023-07-11_Multi_ZED_Summer/bags"
-ROSBAG_NAME = "scen4_2" # scen1, scen2_2, scen4_2, scen5, scen6
-ROSBAG_PATH = f"{ROSBAG_FOLDER}/{ROSBAG_NAME}"
-LIDAR_TOPIC = "/lidar_aft/points"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from free_space.ma2.dataset import LIDAR_TOPIC  # noqa: E402
 
 typestore = get_typestore(Stores.ROS2_FOXY)
 
-def gen_ma2_lidar_points():
+def gen_ma2_lidar_points(rosbag_path):
     lidar_data = []
-    with Reader(ROSBAG_PATH) as reader:
+    with Reader(rosbag_path) as reader:
         connections = [c for c in reader.connections if c.topic == LIDAR_TOPIC]
         assert len(connections) == 1
         for connection, timestamp, rawdata in reader.messages(connections):
@@ -107,7 +113,10 @@ def vizualize_lidar_points(lidar_data, frame_delay=0.2):
 
 
 if __name__ == "__main__":
-    lidar_data = gen_ma2_lidar_points()
-    vizualize_lidar_points(lidar_data)
-
-        
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scenario", default="scen4_2", help="Bag folder name, e.g. scen1, scen2_2, scen4_2, scen5, scen6")
+    parser.add_argument("--data-root", default=os.environ.get("MA2_DATA_ROOT"), required=os.environ.get("MA2_DATA_ROOT") is None)
+    parser.add_argument("--frame-delay", type=float, default=0.2, help="Seconds between scans")
+    args = parser.parse_args()
+    lidar_data = gen_ma2_lidar_points(os.path.join(args.data_root, "bags", args.scenario))
+    vizualize_lidar_points(lidar_data, frame_delay=args.frame_delay)

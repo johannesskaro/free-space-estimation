@@ -1,0 +1,13 @@
+name: scen4_2
+description: Docking with boats
+svo_file: ZED camera svo files/2023-07-11_12-20-43_28170706_HD1080_FPS15.svo
+rosbag: bags/scen4_2
+start_timestamp: 1689070899731613030  # ns, GNSS clock
+# Other interesting start times:
+#   1689070888907352002  starting to see kayak
+#   1689070920831613030  docking
+
+# Hand claps visible in both recordings, used to sync the ZED clock to the GNSS clock
+clap_timestamps:
+  ma2: [1689070864130009197, 1689070865931143443, 1689070867729428949, 1689070870332243623, 1689070872330384680]
+  svo: [1689070864415441257, 1689070866090016257, 1689070867898886257, 1689070870444290257, 1689070872386914257]

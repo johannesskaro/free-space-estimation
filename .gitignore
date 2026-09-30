@@ -1,10 +1,12 @@
-src/__pycache__/
+__pycache__/
+*.pyc
 .env
-venv
+venv/
+.venv/
+sdk4_env/
 .vscode/
 snakeviz/
 weights/
 results/
 files/
 images/
-sdk4_env/

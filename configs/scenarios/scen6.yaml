@@ -1,0 +1,14 @@
+name: scen6
+description: Docking with inflatable tube, further away
+svo_file: ZED camera svo files/2023-07-11_12-55-58_28170706_HD1080_FPS15.svo
+rosbag: bags/scen6
+start_timestamp: 1689073008428931880  # ns, GNSS clock
+# Other interesting start times:
+#   1689073012428931880  starting to see tube
+#   1689073018428931880  tube almost passed
+#   1689073022428931880  tube passed
+
+# Hand claps visible in both recordings, used to sync the ZED clock to the GNSS clock
+clap_timestamps:
+  ma2: [1689072978427718986, 1689072980427686560, 1689072982230896164, 1689072984228220707]
+  svo: [1689072978666263269, 1689072980675916269, 1689072982484494269, 1689072984360142269]
