@@ -248,7 +248,7 @@ class Stixels:
                 var_lidar = sigma_lidar**2
                 has_lidar = True
 
-            if np.isnan(z_stereo) or np.isinf(z_stereo) or z_stereo > 10:
+            if np.isnan(z_stereo) or np.isinf(z_stereo) or z_stereo <= 0 or z_stereo > 10:
                 z_stereo = 0
                 var_stereo = np.inf
                 has_stereo = False
