@@ -91,8 +91,9 @@ export MA2_DATA_ROOT=/path/to/2023-07-11_Multi_ZED_Summer
 python run_ma2.py --scenario scen6
 ```
 
-This opens a window showing the stixels, colored by depth, and the lidar
-points that support them. By default it processes 200 frames from the
+This opens two windows. One shows the stixels, colored by depth, and the
+lidar points that support them. The other shows the free space from above,
+scaled to fit the stixels. By default it processes 200 frames from the
 scenario's start time. The first frame is slow because the ZED SDK and numba
 compile on first use.
 
@@ -102,10 +103,11 @@ compile on first use.
 | `--data-root PATH` | Dataset folder (default: `$MA2_DATA_ROOT`) |
 | `--num-frames N` | Number of frames to process (default 200) |
 | `--no-display` | Don't open a window, e.g. on a server |
+| `--no-bev` | Don't show the bird's-eye view window. Drawing it with matplotlib adds about 80 ms per frame |
 | `--save-video out.mp4` | Save the stixel view as a video |
 | `--save-bev out.mp4` | Save a bird's-eye view of the free space as a video |
 | `--save-jsonl out.jsonl` | Append each frame's stixel footprints, validity, dynamic flags, depth variance and pose to a JSON Lines file |
-| `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. About 3× faster, with coarser water edges. Results differ from the thesis. See [Runtime](#runtime) |
+| `--no-retina-masks` | Compute FastSAM masks at model resolution (576×1024) instead of full resolution. About 3× faster, with coarser water edges |
 
 ### Runtime
 

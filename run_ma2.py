@@ -27,6 +27,7 @@ def parse_args(argv=None):
                         help="Dataset folder containing 'ZED camera svo files/' and 'bags/' (default: $MA2_DATA_ROOT)")
     parser.add_argument("--num-frames", type=int, default=200)
     parser.add_argument("--no-display", action="store_true", help="Don't open OpenCV windows")
+    parser.add_argument("--no-bev", action="store_true", help="Don't show the bird's-eye view window (saves ~80 ms per frame)")
     parser.add_argument("--save-video", metavar="PATH", help="Save the camera view with stixels to an .mp4")
     parser.add_argument("--save-bev", metavar="PATH", help="Save the bird's-eye view to an .mp4")
     parser.add_argument("--save-jsonl", metavar="PATH", help="Append per-frame stixel footprints to a .jsonl file")
@@ -107,10 +108,14 @@ def main(argv=None):
 
         if video is not None:
             video.write(stixel_img)
+        show_bev = not args.no_bev and not args.no_display
+        bev_img = viz.plot_bev(stixels, size_px=height) if (bev_video is not None or show_bev) else None
         if bev_video is not None:
-            bev_video.write(viz.plot_bev(stixels, size_px=height))
+            bev_video.write(bev_img)
         if not args.no_display:
             cv2.imshow("Stixels and lidar", stixel_img)
+            if show_bev:
+                cv2.imshow("Bird's-eye view", cv2.resize(bev_img, (720, 720)))
             cv2.waitKey(1)
 
     print("Reached end of sequence")

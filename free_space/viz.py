@@ -81,11 +81,22 @@ def draw_lidar_points(image, lidar_points, lidar_3d_points=None, point_size=2, m
     return cv2.addWeighted(image_with_lidar, alpha, lidar_overlay, 1, 0.0)
 
 
-def plot_bev(stixels, size_px=1080, xlim=(-35, 35), ylim=(-10, 65)):
+def _fit_limits(points, margin=0.1, min_size=5.0):
+    """Square axis limits (equal scale on both axes) around `points` plus a margin."""
+    lo, hi = points.min(axis=0), points.max(axis=0)
+    center = (lo + hi) / 2
+    half = max((hi - lo).max() * (1 + margin), min_size) / 2
+    return (center[0] - half, center[0] + half), (center[1] - half, center[1] + half)
+
+
+def plot_bev(stixels, size_px=1080, xlim=None, ylim=None):
     """Bird's-eye view of the free space in the camera frame, as a BGR image.
 
     Blue: static obstacle, red: dynamic (boat), yellow: depth propagated from
     the previous frame because there was no lidar measurement.
+
+    By default the axes fit the valid stixels and the camera, so the scale
+    changes from frame to frame. Pass xlim and ylim for a fixed view.
     """
     stixel_points = stixels.stixel_footprints[:, [1, 0]]  # (right, forward)
     validity = stixels.stixel_validity
@@ -112,10 +123,17 @@ def plot_bev(stixels, size_px=1080, xlim=(-35, 35), ylim=(-10, 65)):
 
     ax.set_xlabel("X [m]", fontsize=16)
     ax.set_ylabel("Z [m]", fontsize=16)
+    if xlim is None or ylim is None:
+        visible = np.vstack((stixel_points[validity], [0, 0]))
+        visible = visible[np.isfinite(visible).all(axis=1)]
+        auto_xlim, auto_ylim = _fit_limits(visible)
+        xlim = xlim or auto_xlim
+        ylim = ylim or auto_ylim
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
+    ax.set_aspect('equal', adjustable='box')
     ax.tick_params(axis='both', which='major', labelsize=14)
-    ax.legend(loc='upper right', fontsize=14)
+    ax.legend(loc='best', fontsize=14)
 
     canvas = FigureCanvas(fig)
     canvas.draw()
